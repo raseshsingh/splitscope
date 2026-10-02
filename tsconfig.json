@@ -1,0 +1,12 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": ["chrome"]
+  },
+  "include": [".wxt/**/*.ts", "entrypoints/**/*.ts", "entrypoints/**/*.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}

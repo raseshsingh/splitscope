@@ -1,0 +1,5 @@
+// UI preview only; never referenced by the extension build.
+import { defaultSettings } from '../src/core/settings';
+let settings = defaultSettings;
+const summary = { url: 'https://example.com/shop', activeCount: 1, experimentCount: 2, eventCount: 12, platforms: [{ id: 'optimizely', displayName: 'Optimizely' }], experiments: [{ id: '10248', name: 'Product page • clearer delivery promise', platform: 'optimizely', platformName: 'Optimizely', kind: 'ab', status: 'running-in', variations: [{ id: '202', name: 'Delivery beside price' }] }, { id: '10261', name: 'Welcome offer for returning visitors', platform: 'optimizely', platformName: 'Optimizely', kind: 'personalization', status: 'bucketed-elsewhere', variations: [{ id: '301', name: 'Welcome back' }] }] };
+export const browser = { tabs: { query: async () => [{ id: 1, url: summary.url }] }, storage: { local: { get: async () => ({ 'splitscope:settings': settings }) } }, runtime: { openOptionsPage: async () => { location.href = '/dev/options.html'; }, sendMessage: async (message: any) => { if (message.type === 'settings.set') { settings = message.value; return; } return summary; } } };

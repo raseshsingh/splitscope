@@ -1,0 +1,29 @@
+{
+  "name": "splitscope",
+  "version": "0.1.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:chrome": "wxt -b chrome",
+    "build": "wxt build -b chrome",
+    "zip": "wxt zip -b chrome",
+    "postinstall": "wxt prepare",
+    "test": "npm run build && tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
+    "@preact/signals": "^2.11.2",
+    "preact": "^10.29.8",
+    "valibot": "^1.5.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "@types/chrome": "^0.1.37",
+    "linkedom": "^0.18.13",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "wxt": "^0.21.4"
+  }
+}
