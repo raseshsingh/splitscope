@@ -1,5 +1,5 @@
 export type PlatformId =
-  | 'optimizely' | 'adobe-target' | 'vwo' | 'kameleoon' | 'ab-tasty'
+  | 'growthbook' | 'statsig' | 'posthog' | 'optimizely' | 'adobe-target' | 'vwo' | 'kameleoon' | 'ab-tasty'
   | 'convert' | 'dynamic-yield' | 'unbounce' | 'monetate' | 'pagesense' | 'onesignal';
 
 export type DataSource = 'runtime-api' | 'snippet-data' | 'network' | 'cookie' | 'tokens' | 'dom-event' | 'script';
@@ -47,12 +47,13 @@ export interface NormalizedExperiment {
   platform: PlatformId;
   id: string;
   name: string;
-  kind: 'ab' | 'mvt' | 'split-url' | 'personalization' | 'feature-flag' | 'survey' | 'recommendation' | 'other';
+  kind: 'ab' | 'mvt' | 'split-url' | 'personalization' | 'feature-flag' | 'layer' | 'configuration' | 'survey' | 'recommendation' | 'other';
   status: ExperimentStatus;
   statusReason?: string;
   evidence?: { state: 'applied' | 'assigned' | 'stored' | 'detected' | 'failed'; observedAt: number; pageUrl: string };
   variations: NormalizedVariation[];
   changes?: NormalizedChange[];
+  evaluatedValue?: unknown;
   assignedVariationId?: string;
   trafficAllocation?: number;
   targeting?: { urls?: string[]; audiences?: NamedRef[]; conditions?: string[] };

@@ -86,6 +86,7 @@ export function normalizedExperiment(input: Partial<NormalizedExperiment> & Pick
     evidence: input.evidence,
     variations: input.variations || [],
     changes: input.changes || variationChanges(input.raw),
+    evaluatedValue: input.evaluatedValue,
     assignedVariationId: input.assignedVariationId,
     trafficAllocation: input.trafficAllocation,
     targeting: input.targeting,

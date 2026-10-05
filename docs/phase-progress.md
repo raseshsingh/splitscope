@@ -20,3 +20,14 @@ Validation: TypeScript and Chrome production build completed. No automated tests
 References: [Google data layer](https://developers.google.com/tag-platform/tag-manager/datalayer), [Google tag API](https://developers.google.com/tag-platform/gtagjs/reference), [Adobe AppMeasurement tl](https://experienceleague.adobe.com/en/docs/analytics/implementation/vars/functions/tl-method), [Segment Analytics.js](https://www.twilio.com/docs/segment/connections/sources/catalog/libraries/website/javascript).
 
 Validation: TypeScript and Chrome production build completed. No automated tests or live-site validation run in this phase.
+
+## Phase 3 — GrowthBook, Statsig, PostHog (0.1.8)
+
+- GrowthBook reads exposed `_growthbook`/`growthbook` instances, feature definitions, visual experiments, and cached experiment results. Cached results are stored assignments; live subscriptions and observed evaluations provide current-page evidence. Dev mode commonly controls whether `_growthbook` is exposed.
+- Statsig uses exposed modern clients/registry, observes returned evaluations and subscribes to SDK notifications. It never calls an evaluation API itself. Experiment, feature gate, layer and configuration types remain distinct. Only observed evaluations are listed; initial project enumeration and legacy clients are not supported.
+- PostHog reads the default exposed instance's cached flag values and observes reads/capture calls. Flags are never automatically labeled A/B tests. Reported values are available in Overview, with full sanitized details in Raw.
+- No evaluation or tracking calls are made for discovery. Switching controls stay unavailable for these initial adapters; use vendor override tooling. Private module instances, server-only decisions and proxy traffic may remain invisible. Network detection alone never fabricates an experiment list.
+
+Research sources: [GrowthBook SDK guide](https://docs.growthbook.io/lib/js), [GrowthBook SDK source](https://github.com/growthbook/growthbook/blob/main/packages/sdk-js/src/GrowthBook.ts), [Statsig client source](https://github.com/statsig-io/js-client-monorepo/blob/main/packages/js-client/src/StatsigClient.ts), [Statsig event interfaces](https://github.com/statsig-io/js-client-monorepo/blob/main/packages/client-core/src/StatsigClientEventEmitter.ts), [PostHog flag source](https://github.com/PostHog/posthog-js/blob/main/packages/browser/src/posthog-featureflags.ts). SDK internals used for discovery are feature-detected and may change between versions.
+
+Validation: TypeScript and Chrome production build completed. No automated tests or live-site validation run in this phase.

@@ -8,6 +8,7 @@ import type { CapturedEvent, DetectionRecord, NormalizedExperiment, PlatformId }
 import type { AnyRecord, HookHelpers, PageAdapter } from './runtime';
 
 const platformHosts: Array<[RegExp, PlatformId]> = [
+  [/(^|\.)growthbook\.io$/i, 'growthbook'], [/(^|\.)(statsigapi\.net|statsig\.com)$/i, 'statsig'], [/(^|\.)posthog\.com$/i, 'posthog'],
   [/optimizely|logx\.optimizely/i, 'optimizely'], 
   [/visualwebsiteoptimizer|vwo\.com/i, 'vwo'], [/kameleoon/i, 'kameleoon'], [/abtasty|ariane\.abtasty/i, 'ab-tasty'],
   [/convertexperiments/i, 'convert'], [/dynamicyield|dy\.com/i, 'dynamic-yield'], [/unbounce|ubembed/i, 'unbounce'],
@@ -311,6 +312,9 @@ function applyPendingForce(report: (message: string, error?: unknown) => void): 
 
 function capabilities(id: PlatformId) {
   const data: Record<PlatformId, any> = {
+    growthbook: { listAll: 'partial', listActive: true, forceVariation: 'none', trafficSplit: 'partial', changes: 'partial', events: true, notes: { listAll: 'Requires an exposed SDK instance. Cached results are not current-page proof.', forcing: 'Use GrowthBook developer tools for overrides.' } },
+    statsig: { listAll: 'partial', listActive: true, forceVariation: 'none', trafficSplit: 'none', changes: 'none', events: true, notes: { listAll: 'Only observed client evaluations are listed; private and server evaluations are unavailable.', forcing: 'Use the vendor QA tools for overrides.' } },
+    posthog: { listAll: 'partial', listActive: true, forceVariation: 'none', trafficSplit: 'none', changes: 'none', events: true, notes: { listAll: 'Flag values do not establish experiment membership. Only the default exposed instance is inspected.', forcing: 'Use the PostHog toolbar for overrides.' } },
     optimizely: { listAll: 'full', listActive: true, forceVariation: 'url', trafficSplit: 'partial', changes: 'partial', events: true, notes: {} },
     vwo: { listAll: 'full', listActive: true, forceVariation: 'url', trafficSplit: 'full', changes: 'partial', events: true, notes: {} },
     kameleoon: { listAll: 'full', listActive: true, forceVariation: 'url', trafficSplit: 'full', changes: 'partial', events: true, notes: {} },
