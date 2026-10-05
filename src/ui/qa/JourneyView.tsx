@@ -1,0 +1,12 @@
+import type { Journey } from '../../core/qa/journey';
+import { downloadFile } from '../../core/qa/export';
+import { pretty } from '../../core/qa/presentation';
+import { Disclosure, JsonTree } from '../shared/components';
+import { useState } from 'preact/hooks';
+export default function JourneyView({ journey, onAction }: { journey: Journey | null; onAction: (action: 'start' | 'stop' | 'clear') => void }) {
+  const [confirm, setConfirm] = useState(false), [limit, setLimit] = useState(30);
+  return <section class="ss-card"><h2>Journey recording</h2><p class="ss-caption ss-muted">Records page visits, decision changes, and captured events in this tab, across reloads and SPA navigation. Limited to the starting site’s origin. Stored for this browser session.</p><div class="ss-actions">{!journey?.recording && <button class="ss-button ss-primary" onClick={() => journey ? setConfirm(true) : onAction('start')}>{journey ? 'New recording' : 'Start recording'}</button>}{journey?.recording && <button class="ss-button" onClick={() => onAction('stop')}>Stop journey</button>}{journey && <><button class="ss-button" onClick={() => downloadFile('splitscope-journey.json', pretty(journey))}>Export journey</button><button class="ss-link" onClick={() => setConfirm(true)}>Delete</button></>}</div>
+    {confirm && <div class="ss-notice"><p>Delete the current recording? Export it first if you need a copy.</p><button class="ss-button" onClick={() => { onAction('clear'); setConfirm(false); }}>Delete recording</button><button class="ss-link" onClick={() => setConfirm(false)}>Cancel</button></div>}
+    {journey && <><p>{journey.recording ? 'Recording' : 'Stopped'} · {journey.entries.length} observations · {new Date(journey.startedAt).toLocaleString()}</p><p class="ss-caption ss-muted">{journey.origin} · {journey.omitted ? `${journey.omitted} older observations omitted.` : 'Up to 500 observations / 750 KB retained.'} Stopping event capture also creates a gap in journey events. Missing activities in a snapshot are not treated as confirmed deactivation.</p>{journey.entries.slice().reverse().slice(0, limit).map(entry => <Disclosure key={entry.id} title={entry.name} meta={`${new Date(entry.t).toLocaleTimeString()} · ${entry.type}`}><p class="ss-caption ss-wrap">{entry.url}</p><JsonTree label="Observation" value={entry.detail} /></Disclosure>)}{journey.entries.length > limit && <button class="ss-link" onClick={() => setLimit(limit + 30)}>Show 30 older observations</button>}</>}
+  </section>;
+}

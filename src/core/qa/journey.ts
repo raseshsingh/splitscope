@@ -1,0 +1,29 @@
+import { sanitize } from '../sanitize';
+export interface JourneyEntry { id: string; t: number; type: 'navigation' | 'decision' | 'event' | 'note'; name: string; url?: string; detail?: unknown }
+export interface Journey { origin: string; startedAt: number; endedAt?: number; recording: boolean; lastUrl: string; lastDocument?: string; decisions: Record<string, string>; entries: JourneyEntry[]; omitted: number }
+export function beginJourney(origin: string): Journey { return { origin, startedAt: Date.now(), recording: true, lastUrl: '', decisions: {}, entries: [], omitted: 0 }; }
+export function appendJourney(journey: Journey, entry: Omit<JourneyEntry, 'id'> & { id?: string }): void {
+  if (entry.id && journey.entries.some(item => item.id === entry.id)) return;
+  journey.entries.push({ ...entry, name: String(sanitize(entry.name)).slice(0, 500), url: entry.url ? String(sanitize(entry.url)) : undefined, detail: sanitize(entry.detail, 12000, 8), id: entry.id || crypto.randomUUID() });
+  while (journey.entries.length > 500 || JSON.stringify(journey.entries).length > 750000) { journey.entries.shift(); journey.omitted++; }
+}
+export function recordSnapshot(journey: Journey, snapshot: any): boolean {
+  if (!journey.recording || !snapshot || typeof snapshot.url !== 'string') return false;
+  let origin: string; try { origin = new URL(snapshot.url).origin; } catch { return false; }
+  if (origin !== journey.origin) return false;
+  let changed = false;
+  const url = String(sanitize(snapshot.url));
+  if (journey.lastUrl !== url || journey.lastDocument !== snapshot.documentId) { appendJourney(journey, { t: Date.now(), type: 'navigation', name: 'Page / route visited', url }); journey.lastUrl = url; journey.lastDocument = snapshot.documentId; changed = true; }
+  for (const item of Array.isArray(snapshot.experiments) ? snapshot.experiments.slice(0, 500) : []) {
+    if (typeof item.id !== 'string' || typeof item.platform !== 'string') continue;
+    const key = item.platform + ':' + item.id;
+    const signature = JSON.stringify([item.status, item.assignedVariationId, item.evidence?.state, sanitize(item.evaluatedValue, 1000)]);
+    const before = journey.decisions[key];
+    if (before === signature) continue;
+    appendJourney(journey, { t: Date.now(), type: 'decision', name: item.name || item.id, url, detail: { platform: item.platform, activityId: item.id, before: before ? JSON.parse(before) : null, after: JSON.parse(signature), fields: ['status', 'variationId', 'evidence', 'value'] } });
+    journey.decisions[key] = signature; changed = true;
+  }
+  // Bound the comparison cache as well as the displayed history.
+  const keys = Object.keys(journey.decisions); for (const key of keys.slice(0, Math.max(0, keys.length - 1000))) delete journey.decisions[key];
+  return changed;
+}

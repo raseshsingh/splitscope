@@ -1,3 +1,4 @@
+import { appendJourney, beginJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import { isTargetEndpoint } from '../src/core/target-evidence';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
@@ -10,13 +11,15 @@ const eventWrites = new Map<number, Promise<unknown>>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(messageListener(message => ['preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
+  browser.runtime.onMessage.addListener(messageListener(message => ['journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
     if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD };
     const tabId = sender.tab?.id;
+    if (tabId != null && message.type?.startsWith('journey.')) return manageJourney(tabId, message.type, sender.url || sender.tab?.url || '');
     if (message?.type === 'page.snapshot' && tabId != null) {
       const state = message.state as TabSummary;
       updateBadge(tabId, state.activeCount || 0, Boolean(state.platforms?.length));
       queueTabStateWrite(tabId, state);
+      void updateJourney(tabId, journey => recordSnapshot(journey, state)).catch(error => diagnostic('background', 'Could not save journey decision', error));
       return;
     }
     if (message.type === 'preview.save' && tabId != null) return browser.storage.session.set({ [`splitscope:preview:${tabId}`]: message.value });
@@ -32,6 +35,8 @@ export default defineBackground(() => {
       } catch (error) { diagnostic('background', 'Could not open preview', error); return Promise.reject(error); }
     }
     if (message?.type === 'page.event' && tabId != null) {
+      const event = message.event;
+      void updateJourney(tabId, journey => { if (!journey.recording || typeof event?.pageUrl !== 'string' || new URL(event.pageUrl).origin !== journey.origin) return false; appendJourney(journey, { id: event.id, t: event.t, type: 'event', name: event.name, url: event.pageUrl, detail: event }); return true; }).catch(error => diagnostic('background', 'Could not save journey event', error));
       return queueTabEventWrite(tabId, message.event);
     }
     if (message?.type === 'page.clearEvents' && tabId != null) return serialEventWrite(tabId, () => browser.storage.session.remove(`splitscope:events:${tabId}`));
@@ -92,6 +97,7 @@ export default defineBackground(() => {
       if (timer) clearTimeout(timer);
       pendingWrites.delete(writeKey);
     }
+    void serialJourneyWrite(tabId, () => browser.storage.session.remove(`splitscope:journey:${tabId}`));
     void serialEventWrite(tabId, () => browser.storage.session.remove([`splitscope:tab:${tabId}`, `splitscope:events:${tabId}`, `splitscope:panel:${tabId}`, `splitscope:preview:${tabId}`]));
   });
 
@@ -181,7 +187,7 @@ function queueTabEventWrite(tabId: number, event: unknown): Promise<unknown> {
 function updateBadge(tabId: number, count: number, detected: boolean): void {
   const value = count > 99 ? '99+' : detected ? String(count) : '';
   void Promise.resolve().then(() => browser.action.setIcon({ tabId, path: detected ? 'icons/detected.png' : 'icons/idle.png' })).catch(error => diagnostic('background', 'Toolbar icon unavailable', error));
-  void browser.action.setTitle({ tabId, title: detected ? `Splitscope: ${count} active activities — open inspector` : 'Splitscope: no platform detected yet — open inspector' });
+  void browser.action.setTitle({ tabId, title: detected ? `Splitscope: ${count} current decisions — open inspector` : 'Splitscope: no platform detected yet — open inspector' });
   void browser.action.setBadgeText({ tabId, text: value });
   void browser.action.setBadgeBackgroundColor({ tabId, color: detected ? '#08764f' : '#66758a' });
 }
@@ -222,4 +228,29 @@ function showOpenError(build: string, detail: string): void {
   const reload = document.createElement('button'); reload.textContent = 'Reload page'; reload.onclick = () => location.reload();
   const close = document.createElement('button'); close.textContent = 'Close'; close.style.marginLeft = '12px'; close.onclick = () => host.remove();
   box.append(heading, explanation, output, reload, close); root.append(box); document.documentElement.append(host);
+}
+
+const journeyWrites = new Map<number, Promise<unknown>>();
+function serialJourneyWrite<T>(tabId: number, action: () => Promise<T>): Promise<T> {
+  const pending = (journeyWrites.get(tabId) || Promise.resolve()).catch(() => {}).then(action);
+  journeyWrites.set(tabId, pending);
+  void pending.finally(() => { if (journeyWrites.get(tabId) === pending) journeyWrites.delete(tabId); }).catch(() => {});
+  return pending;
+}
+function updateJourney(tabId: number, update: (journey: Journey) => boolean) {
+  return serialJourneyWrite(tabId, async () => {
+    const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);
+    const journey = saved[key] as Journey | undefined;
+    if (journey && update(journey)) await browser.storage.session.set({ [key]: journey });
+  });
+}
+function manageJourney(tabId: number, type: string, url: string) {
+  return serialJourneyWrite(tabId, async () => {
+    const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);
+    if (type === 'journey.clear') { await browser.storage.session.remove(key); return null; }
+    let journey = saved[key] as Journey | undefined;
+    if (type === 'journey.start') { journey = beginJourney(new URL(url).origin); await browser.storage.session.set({ [key]: journey }); }
+    if (type === 'journey.stop' && journey) { journey.recording = false; journey.endedAt = Date.now(); await browser.storage.session.set({ [key]: journey }); }
+    return journey || null;
+  });
 }

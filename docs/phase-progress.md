@@ -31,3 +31,13 @@ Validation: TypeScript and Chrome production build completed. No automated tests
 Research sources: [GrowthBook SDK guide](https://docs.growthbook.io/lib/js), [GrowthBook SDK source](https://github.com/growthbook/growthbook/blob/main/packages/sdk-js/src/GrowthBook.ts), [Statsig client source](https://github.com/statsig-io/js-client-monorepo/blob/main/packages/js-client/src/StatsigClient.ts), [Statsig event interfaces](https://github.com/statsig-io/js-client-monorepo/blob/main/packages/client-core/src/StatsigClientEventEmitter.ts), [PostHog flag source](https://github.com/PostHog/posthog-js/blob/main/packages/browser/src/posthog-featureflags.ts). SDK internals used for discovery are feature-detected and may change between versions.
 
 Validation: TypeScript and Chrome production build completed. No automated tests or live-site validation run in this phase.
+
+## Phase 4 — Journeys and saved workspaces (0.1.9)
+
+- Extension-local per-origin workspace stores a name, notes, activity filters/selection, up to 100 pins, expectations and a bounded assignment baseline. Changes synchronize between same-origin tabs. Export and clear actions are available in Tools.
+- Baseline comparisons survive reload and show before/after state, variation and reported feature values. Baselines include capture time and page URL; missing records are labeled no longer reported.
+- Explicit tab/session journey recording survives navigation and reload. The background serializes writes, records navigation (including same-URL reload), changed decisions, and captured events on the starting origin. Other origins are excluded; recording resumes when returning. No activity disappearance is interpreted as proof of deactivation.
+- Journey history is capped at 500 observations / 750 KB, with omission count, and its comparison cache is bounded. Closing the tab removes its recording. User can stop, export and delete; a new recording follows deletion of the previous recording. Stopping event capture leaves a documented gap.
+- Design preview now exposes workspaces, example journey data and a sample event generator. It still does not exercise browser-extension persistence or vendor capture.
+
+Validation: TypeScript and Chrome production build completed. No automated tests, browser interaction tests or live-site validation run in this phase. Initial SDK coverage and vendor assignment-reset limitations described above still apply.

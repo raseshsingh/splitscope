@@ -14,11 +14,11 @@ The keyboard command **Alt+Shift+S** toggles the panel.
 
 ## Current adapter coverage
 
-The current build has detection adapters for: Adobe Target, Optimizely, VWO, Kameleoon, AB Tasty, Convert, Dynamic Yield, Unbounce, Monetate, Zoho PageSense, and OneSignal. Optimizely, VWO, Kameleoon, AB Tasty, and Convert have initial experiment readers. Other adapters expose runtime details when the page makes them available. OneSignal is presented as an engagement SDK, not an A/B experimentation tool.
+The current build has detection adapters for: Adobe Target, Optimizely, VWO, Kameleoon, AB Tasty, Convert, Dynamic Yield, Unbounce, Monetate, Zoho PageSense, OneSignal, GrowthBook, Statsig, and PostHog. Optimizely, VWO, Kameleoon, AB Tasty, and Convert have initial experiment readers. Other adapters expose runtime details when the page makes them available. OneSignal is presented as an engagement SDK, not an A/B experimentation tool.
 
 The hook observes API commands, documented lifecycle events, selected page-world network calls, and image-pixel requests. The event buffer is memory-only by default. Enabling **Keep event log across page loads** stores a sanitized session log in Chrome session storage and restores it when the page loads again.
 
-Variation switching is still in active development. The confirmation dialog shows the adapter's proposed method and its reported tracking impact. Runtime formats and force behaviour need verification against live platform installs before relying on them for client QA. Safe mode, dataLayer capture, a complete forcing reset workflow, and the remaining adapter detail readers are not implemented yet. The existing plan uses Kameleoon; Chameleon is a separate product and is not implemented.
+Variation switching is still in active development. The confirmation dialog shows the adapter's proposed method and its reported tracking impact. Runtime formats and force behaviour need verification against live platform installs before relying on them for client QA. Safe mode and universal visitor-assignment reset are not implemented. Preview parameter reset only restores URL parameters changed by Splitscope; persistent vendor assignments require vendor controls. The existing plan uses Kameleoon; Chameleon is a separate product and is not implemented.
 
 ## Development commands
 
@@ -49,7 +49,7 @@ The settings gear opens inside the page panel. **Restore panel after reload** is
 
 The toolbar icon is green when a platform is detected and gray otherwise; its badge reports activities explicitly active for this visitor. A zero means a platform was detected without confirmed active activities.
 
-Preview offers current-tab and new-tab choices. Tabs share visitor cookies. Convert uses its vendor preview URL. Kameleoon A/B assignment is queued before engine activation and may count in reports; personalization requires a vendor simulation link. Kameleoon/VWO preview URLs require Splitscope in the destination tab because the extension consumes their temporary parameters before the SDK loads.
+Preview offers current-tab and new-tab choices. Tabs share visitor cookies. Convert uses its vendor preview URL. Kameleoon A/B assignment waits for the engine, saves and verifies the assignment, then reloads and may count in reports; personalization requires a vendor simulation link. Kameleoon/VWO preview URLs require Splitscope in the destination tab because the extension consumes their temporary parameters before the SDK loads.
 
 For errors, open **Settings → Copy diagnostics**, or copy console messages starting with **[Splitscope/bridge]** or **[Splitscope/hook]**. Production builds currently retain readable JavaScript and `.map` files for troubleshooting. Include the affected website URL, action taken, and error stack. Review diagnostics before sharing.
 
@@ -59,4 +59,16 @@ See [preview and detection changes](docs/preview-and-detection.md) for the API r
 
 `npm test` rebuilds the Chrome extension and runs adapter, detail-view and compiled bridge lifecycle checks. An optional Accor compatibility check uses a separately downloaded public Kameleoon engine: `SPLITSCOPE_KAMELEOON_ENGINE=/path/to/engine.js npm test`. It executes only the extracted assignment function, not the website or tracking engine. See [0.1.2 investigation and limits](docs/preview-and-detection.md).
 
-After upgrading to 0.1.2, reload Splitscope on `chrome://extensions` and refresh existing website tabs once. Old scripts already injected into those tabs cannot be updated by rebuilding the extension folder alone.
+After upgrading, reload Splitscope on `chrome://extensions` and refresh existing website tabs once. Old scripts already injected into those tabs cannot be updated by rebuilding the extension folder alone.
+
+## QA workflows (0.1.9)
+
+- **Activities:** evidence distinguishes assigned/delivered, applied, stored, and detected-only states. Pin activities from their detail view; filters and selection are saved per site.
+- **Events → Event expectations:** save exact event names, source, required property paths, and expected JSON values. Start a check, perform an action, finish before leaving Events, and copy results. Checks use the retained buffer and cannot establish vendor ingestion.
+- **Settings → Capture analytics calls:** opt in to future default dataLayer, Google tag, exposed Segment and AppMeasurement calls, plus recognized outgoing transport endpoints. Renamed globals, private SDKs and first-party proxy endpoints can be unavailable.
+- **Tools → Site workspace:** local per-origin name, notes, filters, pins, baseline and expectations. Export or clear explicitly. Workspace changes are shared by tabs on the same origin. Exports are sanitized; review before sharing.
+- **Tools → Journey recording:** opt-in tab/session history across reloads and SPA navigation on the starting origin. Other origins are excluded. Stop, export, or delete; starting a new recording requires deleting the old one. Retains up to 500 entries / 750 KB plus a bounded decision cache. It does not require Keep event log. Paused capture and missing pre-hook events remain gaps.
+- **Tools → Compare assignments:** persistent baseline, timestamp/page, before/after status, variation and feature value.
+- **GrowthBook / Statsig / PostHog:** initial observation-only integrations, with no switching controls. Coverage depends on exposed instances; project enumeration is partial. Statsig lists observed evaluations only; PostHog flags are not assumed to be experiments.
+
+See [phase progress and limitations](docs/phase-progress.md). These changes passed compilation and production builds; they have not been verified on live vendor installs.

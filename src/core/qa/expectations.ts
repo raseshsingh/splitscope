@@ -11,7 +11,8 @@ export function evaluateExpectations(rules: EventExpectation[], events: Captured
       const issues = rule.required.filter(path => field(event.properties, path) === undefined).map(path => `Missing: ${path}`);
       for (const [path, expected] of Object.entries(rule.equals)) {
         const actual = field(event.properties, path);
-        if (!equal(actual, expected)) issues.push(`Unexpected value: ${path}`);
+        if (typeof actual === 'string' && /\[(redacted|payload truncated|depth limit|getter|unavailable)\]/.test(actual)) issues.push(`Value unavailable: ${path}`);
+        else if (!equal(actual, expected)) issues.push(`Unexpected value: ${path}`);
       }
       return issues.length ? [{ eventId: event.id, issues }] : [];
     });

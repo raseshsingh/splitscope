@@ -1,3 +1,5 @@
+import { emptyWorkspace, normalizeWorkspace, type Workspace } from '../src/core/qa/workspace';
+import type { Journey } from '../src/core/qa/journey';
 import { normalizeExpectations, type EventExpectation } from '../src/core/qa/expectations';
 import { createPreview, resetPreviewUrl } from '../src/core/qa/preview';
 import { render, Component, type ComponentChildren } from 'preact';
@@ -59,11 +61,16 @@ export default defineContentScript({
     const settings = signal(defaultSettings);
     const requestedTab = signal<{ tab: PanelTab; requestId: number }>({ tab: 'activities', requestId: 0 });
     void send({ type: 'preview.get' }).then(record => { if (record?.origin === location.origin && Date.now() - record.startedAt < 86400000) { state.value = { ...state.value, preview: record }; requestedExperiment.value = { platform: record.platform, id: record.experimentId, requestId: Date.now() }; } }).catch(error => diagnostic('bridge', 'Could not restore preview', error));
+    const workspace = signal<Workspace>(emptyWorkspace());
+    const workspaceKey = `splitscope:workspace:${location.origin}`;
+    const journey = signal<Journey | null>(null);
+    const workspaceLoaded = browser.storage.local.get(workspaceKey).then(value => { workspace.value = normalizeWorkspace(value[workspaceKey]); }).catch(error => diagnostic('bridge', 'Could not load workspace', error));
     const expectations = signal<EventExpectation[]>([]);
     const expectationsKey = `splitscope:expectations:${location.origin}`;
-    void browser.storage.local.get(expectationsKey).then(value => { expectations.value = normalizeExpectations(value[expectationsKey]); }).catch(error => diagnostic('bridge', 'Could not load expectations', error));
+    const expectationsLoaded = browser.storage.local.get(expectationsKey).then(value => { expectations.value = normalizeExpectations(value[expectationsKey]); }).catch(error => diagnostic('bridge', 'Could not load expectations', error));
     const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) { settings.value = normalizeSettings(result?.['splitscope:settings']); command('captureOptions', { analytics: settings.value.analyticsCapture }); } }).catch(error => diagnostic('bridge', 'Could not load settings', error));
     const onSettingsChanged = (changes: Record<string, any>, area: string) => {
+      if (isAlive() && area === 'local') { if (changes[workspaceKey]) workspace.value = normalizeWorkspace(changes[workspaceKey].newValue); if (changes[expectationsKey]) expectations.value = normalizeExpectations(changes[expectationsKey].newValue); }
       if (isAlive() && area === 'local' && changes['splitscope:settings']) { settings.value = normalizeSettings(changes['splitscope:settings'].newValue); command('captureOptions', { analytics: settings.value.analyticsCapture }); }
     };
     browser.storage.onChanged.addListener(onSettingsChanged);
@@ -82,6 +89,7 @@ export default defineContentScript({
       if (mounting) return mounting;
       mounting = (async () => {
       if (!document.head && !document.body) await new Promise<void>(resolve => { const ready = () => { document.removeEventListener('DOMContentLoaded', ready); resolve(); }; document.addEventListener('DOMContentLoaded', ready, { once: true }); cleanup.push(ready); });
+      await Promise.all([workspaceLoaded, expectationsLoaded]);
       if (!isAlive()) throw new Error('Inspector connection expired during mount.');
       state.value = { ...state.value, statuses: state.value.statuses.filter(item => !String(item.message).startsWith('force-')) };
       try {
@@ -94,7 +102,7 @@ export default defineContentScript({
         mode: 'closed',
         isolateEvents: ['keydown', 'keyup', 'keypress'],
         onMount(container) {
-          render(<PanelBoundary><App expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); void browser.storage.local.set({ [expectationsKey]: expectations.value }).catch(error => report('Could not save expectations', error)); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
+          render(<PanelBoundary><App workspace={workspace} onWorkspace={value => { workspace.value = normalizeWorkspace(value); void browser.storage.local.set({ [workspaceKey]: workspace.value }).catch(error => report('Could not save workspace', error)); }} journey={journey} onJourney={action => { void send({ type: `journey.${action}` }).then(value => { journey.value = value || null; if (action === 'start') command('rescan'); }).catch(error => report('Could not update journey', error)); }} expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); void browser.storage.local.set({ [expectationsKey]: expectations.value }).catch(error => report('Could not save expectations', error)); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
           return container;
         },
         onRemove(container) { uiMounted = false; if (container) render(null, container); }
@@ -145,7 +153,7 @@ export default defineContentScript({
           experiments: Array.isArray(payload.experiments) ? payload.experiments as NormalizedExperiment[] : [],
           page: payload.page || state.value.page
         };
-        send({ type: 'page.snapshot', state: summarize(state.value) }).catch(error => report('Could not update toolbar state', error));
+        send({ type: 'page.snapshot', state: { ...summarize(state.value), documentId: instanceId } }).catch(error => report('Could not update toolbar state', error));
       } else if (message.type === 'event' && message.payload && typeof message.payload === 'object') {
         if (eventsPaused) return;
         const incoming = parseEvent(message.payload);
@@ -155,7 +163,7 @@ export default defineContentScript({
           platformEvidence.set(incoming.platform, evidence);
           if (!state.value.platforms.some(item => item.id === incoming.platform)) {
             state.value = { ...state.value, platforms: [...state.value.platforms, evidence] };
-            void send({ type: 'page.snapshot', state: summarize(state.value) }).catch(error => report('Could not update detected platforms', error));
+            void send({ type: 'page.snapshot', state: { ...summarize(state.value), documentId: instanceId } }).catch(error => report('Could not update detected platforms', error));
           }
         }
         const events = [...state.value.events, incoming].slice(-5000);
@@ -198,6 +206,8 @@ export default defineContentScript({
     });
     browser.runtime.onMessage.addListener(onRuntimeMessage);
     cleanup.push(() => browser.runtime.onMessage.removeListener(onRuntimeMessage));
+    const journeyTimer = window.setInterval(() => { if (isAlive() && uiMounted) void send({ type: 'journey.get' }).then(value => { if (isAlive()) journey.value = value || null; }).catch(error => report('Could not load journey', error)); }, 2500);
+    cleanup.push(() => window.clearInterval(journeyTimer));
     const healthTimer = window.setInterval(() => { isAlive(); }, 1000);
     cleanup.push(() => window.clearInterval(healthTimer));
     window.postMessage({ namespace: '__splitscope__', nonce: 'bootstrap', type: 'hello' }, '*');
@@ -233,6 +243,8 @@ function summarize(state: PageState) {
       name: item.name,
       status: item.status,
       assignedVariationId: item.assignedVariationId,
+      evidence: item.evidence,
+      evaluatedValue: item.evaluatedValue,
       variations: item.variations.map((variation) => ({ id: variation.id, name: variation.name }))
     }))
   };
