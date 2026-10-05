@@ -1,3 +1,4 @@
+import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
 import { isTargetEndpoint } from '../target-evidence';
 import { diagnostic } from '../diagnostics';
@@ -33,6 +34,8 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const observed = new Map<string, NormalizedExperiment>();
   let observedUrl = location.href;
   const evidenceTimes = new Map<string, { signature: string; at: number }>();
+  let analyticsEnabled = false;
+  let refreshAnalytics = () => {};
   let preparedPlan: AnyRecord | undefined;
   const observedPlatforms = new Set<PlatformId>();
   let eventRefreshTimer = 0;
@@ -191,6 +194,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   function handleCommand(message: ReturnType<typeof parseBridgeMessage>): void {
     if (!message || message.type !== 'command' || !message.payload || typeof message.payload !== 'object') return;
     const payload = message.payload as AnyRecord;
+    if (payload.name === 'captureOptions') { analyticsEnabled = payload.analytics === true; refreshAnalytics(); return; }
     if (payload.name === 'refresh' || payload.name === 'rescan') { publish(); return; }
     if (payload.name === 'stop') { stop(); return; }
     if (payload.name === 'forceVariation') {
@@ -241,7 +245,8 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   for (const adapter of adapters) {
     try { adapter.install(helpers); } catch (error) { diagnostic('hook', `Could not install ${adapter.displayName} hooks`, error); }
   }
-  installNetworkHooks(emit, cleanups);
+  refreshAnalytics = installAnalytics(emit, () => analyticsEnabled, cleanups);
+  installNetworkHooks(emit, cleanups, () => analyticsEnabled);
   installHistoryHooks(emit, cleanups, publish);
   const retryUntilReady = () => {
     if (!connected && performance.now() - started < 1500) window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello' }, '*');
@@ -341,13 +346,13 @@ function inferCategory(name: string): CapturedEvent['category'] {
   return 'custom';
 }
 
-function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>): void {
-  const classify = (raw: string) => { try { const url = new URL(raw, location.href); return isTargetEndpoint(url.href) ? 'adobe-target' as const : platformHosts.find(([pattern]) => pattern.test(url.hostname))?.[1]; } catch { return undefined; } };
+function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>, analytics: () => boolean): void {
+  const classify = (raw: string) => { try { const url = new URL(raw, location.href); return isTargetEndpoint(url.href) ? 'adobe-target' as const : platformHosts.find(([pattern]) => pattern.test(url.hostname))?.[1] || (analytics() ? analyticsEndpoint(url.href) : undefined); } catch { return undefined; } };
   const originalFetch = window.fetch;
   const fetchWrapper: typeof window.fetch = function (this: Window, input: RequestInfo | URL, init?: RequestInit) {
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
     const platform = classify(url);
-    if (platform) emit({ platform, category: 'network', name: `${init?.method || 'GET'} ${safeUrl(url)}`, properties: { body: safeBody(init?.body), mode: init?.mode }, via: 'network', caller: captureCaller() });
+    if (platform) emit({ platform, category: 'network', name: `${init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')} ${safeUrl(url)}`, properties: { query: analytics() && analyticsEndpoint(url) ? queryValues(url) : undefined, body: safeBody(init?.body), mode: init?.mode }, via: 'network', caller: captureCaller() });
     return Reflect.apply(originalFetch, this, [input, init]);
   };
   window.fetch = fetchWrapper;
@@ -363,7 +368,7 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
   const sendWrapper: typeof xhrSend = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
     const request = (this as any)[urlKey];
     const platform = request ? classify(request.url) : undefined;
-    if (platform) emit({ platform, category: 'network', name: `${request.method} ${safeUrl(request.url)}`, properties: { body: safeBody(body) }, via: 'network', caller: captureCaller() });
+    if (platform) emit({ platform, category: 'network', name: `${request.method} ${safeUrl(request.url)}`, properties: { query: analytics() && analyticsEndpoint(request.url) ? queryValues(request.url) : undefined, body: safeBody(body) }, via: 'network', caller: captureCaller() });
     return Reflect.apply(xhrSend, this, [body]);
   } as typeof xhrSend;
   XMLHttpRequest.prototype.open = openWrapper;
@@ -374,7 +379,7 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
     const sendBeacon = navigator.sendBeacon;
     const sendBeaconWrapper: typeof navigator.sendBeacon = function (this: Navigator, url: string | URL, data?: BodyInit | null) {
       const platform = classify(String(url));
-      if (platform) emit({ platform, category: 'network', name: `beacon ${safeUrl(String(url))}`, properties: { body: safeBody(data) }, via: 'network', caller: captureCaller() });
+      if (platform) emit({ platform, category: 'network', name: `beacon ${safeUrl(String(url))}`, properties: { query: analytics() && analyticsEndpoint(String(url)) ? queryValues(String(url)) : undefined, body: safeBody(data) }, via: 'network', caller: captureCaller() });
       return Reflect.apply(sendBeacon, this, [url, data]);
     };
     navigator.sendBeacon = sendBeaconWrapper;
@@ -385,6 +390,8 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
 function safeUrl(raw: string): string {
   try { const url = new URL(raw, location.href); return `${url.origin}${url.pathname}`; } catch { return raw.slice(0, 250); }
 }
+
+function queryValues(raw: string) { try { return sanitize(Object.fromEntries(new URL(raw, location.href).searchParams)); } catch { return undefined; } }
 
 function safeBody(body: unknown): unknown {
   if (typeof body !== 'string') return body == null ? body : `[${Object.prototype.toString.call(body)}]`;

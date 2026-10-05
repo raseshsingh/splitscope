@@ -1,3 +1,4 @@
+import { normalizeExpectations, type EventExpectation } from '../src/core/qa/expectations';
 import { createPreview, resetPreviewUrl } from '../src/core/qa/preview';
 import { render, Component, type ComponentChildren } from 'preact';
 import { diagnostic, diagnostics } from '../src/core/diagnostics';
@@ -58,9 +59,12 @@ export default defineContentScript({
     const settings = signal(defaultSettings);
     const requestedTab = signal<{ tab: PanelTab; requestId: number }>({ tab: 'activities', requestId: 0 });
     void send({ type: 'preview.get' }).then(record => { if (record?.origin === location.origin && Date.now() - record.startedAt < 86400000) { state.value = { ...state.value, preview: record }; requestedExperiment.value = { platform: record.platform, id: record.experimentId, requestId: Date.now() }; } }).catch(error => diagnostic('bridge', 'Could not restore preview', error));
-    const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) settings.value = normalizeSettings(result?.['splitscope:settings']); }).catch(error => diagnostic('bridge', 'Could not load settings', error));
+    const expectations = signal<EventExpectation[]>([]);
+    const expectationsKey = `splitscope:expectations:${location.origin}`;
+    void browser.storage.local.get(expectationsKey).then(value => { expectations.value = normalizeExpectations(value[expectationsKey]); }).catch(error => diagnostic('bridge', 'Could not load expectations', error));
+    const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) { settings.value = normalizeSettings(result?.['splitscope:settings']); command('captureOptions', { analytics: settings.value.analyticsCapture }); } }).catch(error => diagnostic('bridge', 'Could not load settings', error));
     const onSettingsChanged = (changes: Record<string, any>, area: string) => {
-      if (isAlive() && area === 'local' && changes['splitscope:settings']) settings.value = normalizeSettings(changes['splitscope:settings'].newValue);
+      if (isAlive() && area === 'local' && changes['splitscope:settings']) { settings.value = normalizeSettings(changes['splitscope:settings'].newValue); command('captureOptions', { analytics: settings.value.analyticsCapture }); }
     };
     browser.storage.onChanged.addListener(onSettingsChanged);
     cleanup.push(() => browser.storage.onChanged.removeListener(onSettingsChanged));
@@ -90,7 +94,7 @@ export default defineContentScript({
         mode: 'closed',
         isolateEvents: ['keydown', 'keyup', 'keypress'],
         onMount(container) {
-          render(<PanelBoundary><App state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
+          render(<PanelBoundary><App expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); void browser.storage.local.set({ [expectationsKey]: expectations.value }).catch(error => report('Could not save expectations', error)); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
           return container;
         },
         onRemove(container) { uiMounted = false; if (container) render(null, container); }
@@ -122,6 +126,7 @@ export default defineContentScript({
         nonce = message.nonce;
         console.info('[Splitscope/bridge] Connected to page hook');
         window.postMessage({ namespace: '__splitscope__', nonce, type: 'ready' }, '*');
+        command('captureOptions', { analytics: settings.value.analyticsCapture });
         return;
       }
       if (message.nonce !== nonce) return;
@@ -145,8 +150,8 @@ export default defineContentScript({
         if (eventsPaused) return;
         const incoming = parseEvent(message.payload);
         if (!incoming) { report('Rejected event record', 'Unsupported event shape'); return; }
-        if (incoming.platform !== 'page' && incoming.platform !== 'datalayer') {
-          const evidence: DetectionRecord = { id: incoming.platform, displayName: platformNames[incoming.platform] || incoming.platform, result: { state: 'detected', confidence: 0.9, signals: [`Observed ${incoming.via}: ${incoming.name}`] }, capabilities: { listAll: 'partial', listActive: false, forceVariation: 'none', trafficSplit: 'none', changes: 'none', events: true, notes: {} } };
+        if (!['page', 'datalayer', 'ga4', 'segment', 'adobe-analytics'].includes(incoming.platform)) {
+          const evidence: DetectionRecord = { id: incoming.platform as DetectionRecord['id'], displayName: platformNames[incoming.platform] || incoming.platform, result: { state: 'detected', confidence: 0.9, signals: [`Observed ${incoming.via}: ${incoming.name}`] }, capabilities: { listAll: 'partial', listActive: false, forceVariation: 'none', trafficSplit: 'none', changes: 'none', events: true, notes: {} } };
           platformEvidence.set(incoming.platform, evidence);
           if (!state.value.platforms.some(item => item.id === incoming.platform)) {
             state.value = { ...state.value, platforms: [...state.value.platforms, evidence] };

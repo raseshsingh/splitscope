@@ -3,6 +3,8 @@ import type { CapturedEvent } from '../../core/model';
 import { platformNames, pretty } from '../../core/qa/presentation';
 import { downloadFile, eventsCsv } from '../../core/qa/export';
 import { CopyButton, Empty, Icon, JsonTree } from '../shared/components';
+const searchCache = new WeakMap<CapturedEvent, string>();
+function searchable(event: CapturedEvent) { let text = searchCache.get(event); if (!text) { text = (event.name + ' ' + event.experimentId + ' ' + pretty(event.properties)).toLowerCase(); searchCache.set(event, text); } return text; }
 export function EventRow({ event }: { event: CapturedEvent }) {
   const [open, setOpen] = useState(false);
   const route = event.platform === 'page';
@@ -19,7 +21,7 @@ export default function EventFeed({ events, paused, onPause, onClear, compact = 
   const [query, setQuery] = useState(''); const [platform, setPlatform] = useState('all'); const [category, setCategory] = useState(compact ? 'all' : 'business'); const [limit, setLimit] = useState(100); const [confirmClear, setConfirmClear] = useState(false);
   const [frozen, setFrozen] = useState<CapturedEvent[] | null>(null);
   const visible = frozen || events;
-  const filtered = useMemo(() => visible.filter((event) => (platform === 'all' || event.platform === platform) && (category === 'all' || (category === 'business' ? ['custom', 'goal', 'revenue'].includes(event.category) : event.category === category)) && (!query.trim() || (event.name + ' ' + event.experimentId + ' ' + pretty(event.properties)).toLowerCase().includes(query.trim().toLowerCase()))).slice().sort((a, b) => b.t - a.t), [visible, platform, category, query]);
+  const filtered = useMemo(() => visible.filter((event) => (platform === 'all' || event.platform === platform) && (category === 'all' || (category === 'business' ? ['custom', 'goal', 'revenue'].includes(event.category) : event.category === category)) && (!query.trim() || searchable(event).includes(query.trim().toLowerCase()))).slice().sort((a, b) => b.t - a.t), [visible, platform, category, query]);
   return <section class="ss-feed"><div class="ss-section-title"><div><h2>{compact ? 'Linked events' : 'Event timeline'}</h2><p>{filtered.length} matching · newest first {paused ? '· capture paused' : '· capturing'}</p></div>{!compact && <button class="ss-button" onClick={onPause}><Icon name={paused ? 'play' : 'pause'} size={14} />{paused ? 'Start recording' : 'Stop recording'}</button>}</div>
     <label class="ss-search"><Icon name="search" size={17} /><input aria-label="Search events" placeholder="Find an event or property…" value={query} onInput={(event) => { setQuery(event.currentTarget.value); setLimit(100); }} /></label>
     <div class="ss-filter-row"><select aria-label="Filter event platform" value={platform} onChange={(event) => { setPlatform(event.currentTarget.value); setLimit(100); }}><option value="all">All platforms</option>{[...new Set(events.map((event) => event.platform))].map((id) => <option key={id} value={id}>{platformNames[id] || id}</option>)}</select><select aria-label="Filter event category" value={category} onChange={(event) => { setCategory(event.currentTarget.value); setLimit(100); }}><option value="all">All event types</option><option value="business">Goals & custom events</option>{[...new Set(events.map((event) => event.category))].map((name) => <option key={name} value={name}>{name}</option>)}</select></div>

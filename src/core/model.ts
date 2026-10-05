@@ -91,7 +91,7 @@ export type EventCategory = 'custom' | 'goal' | 'revenue' | 'pageview' | 'decisi
 export interface CapturedEvent {
   id: string;
   t: number;
-  platform: PlatformId | 'datalayer' | 'page';
+  platform: PlatformId | 'datalayer' | 'ga4' | 'segment' | 'adobe-analytics' | 'page';
   pageUrl?: string;
   category: EventCategory;
   name: string;

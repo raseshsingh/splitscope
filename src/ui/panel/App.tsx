@@ -1,3 +1,5 @@
+import Expectations from '../qa/Expectations';
+import type { EventExpectation } from '../../core/qa/expectations';
 import { previewOutcome, type PreviewRecord } from '../../core/qa/preview';
 import { activityDetails } from '../../core/qa/activity-details';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -13,7 +15,7 @@ import { Brand, CopyButton, Disclosure, Empty, Icon, IconButton, JsonTree, Statu
 import SettingsView from './SettingsView';
 import EventFeed from '../events/EventFeed';
 export type PanelTab = 'activities' | 'events' | 'page' | 'tools' | 'settings';
-type Props = { state: Signal<PageState>; requestedExperiment: Signal<{ platform: string; id: string; requestId: number } | null>; requestedTab?: Signal<{ tab: PanelTab; requestId: number }>; settings?: Signal<Settings>; onSettings?: (value: Settings) => void; onClose: () => void; onRescan: () => void; onClearEvents?: () => void; initialPaused?: boolean; onPauseEvents: (paused: boolean) => void; onForceRequest: (payload: Record<string, unknown>) => void; onResetPreview?: () => void; onForceExecute: (plan: ForcePlan, target: 'current' | 'new', request?: Omit<PreviewRecord, 'origin' | 'startedAt' | 'changes' | 'persistent'>) => void };
+type Props = { expectations?: Signal<EventExpectation[]>; onExpectations?: (rules: EventExpectation[]) => void; state: Signal<PageState>; requestedExperiment: Signal<{ platform: string; id: string; requestId: number } | null>; requestedTab?: Signal<{ tab: PanelTab; requestId: number }>; settings?: Signal<Settings>; onSettings?: (value: Settings) => void; onClose: () => void; onRescan: () => void; onClearEvents?: () => void; initialPaused?: boolean; onPauseEvents: (paused: boolean) => void; onForceRequest: (payload: Record<string, unknown>) => void; onResetPreview?: () => void; onForceExecute: (plan: ForcePlan, target: 'current' | 'new', request?: Omit<PreviewRecord, 'origin' | 'startedAt' | 'changes' | 'persistent'>) => void };
 export default function App(props: Props) {
   const { state, requestedExperiment, onRescan } = props;
   const current = state.value; const settings = props.settings?.value || defaultSettings;
@@ -66,7 +68,7 @@ export default function App(props: Props) {
         {!filtered.length && <Empty title={current.experiments.length ? 'No matching activities' : 'No activity decisions available'}>{current.experiments.length ? 'Clear a filter or try another ID.' : current.platforms.length ? 'A platform was detected, but it has not exposed activity data. Accept site consent or interact with the page, then refresh.' : 'No supported platform was detected. Refresh after the site finishes loading.'}</Empty>}
         {groups.filter((group) => group.items.length).map((group) => <section class="ss-group" key={group.title}><div class="ss-group-title">{group.title}<span>{group.items.length}</span></div>{group.items.map(({ experiment: item, matchedVariationName }) => <button class="ss-activity" key={activityKey(item)} onClick={() => setSelected(activityKey(item))}><div class="ss-inline"><span class="ss-eyebrow">{platformNames[item.platform]} · {kindNames[item.kind]}</span><Icon name="arrow" size={15} /></div><h3>{item.name}</h3><div class="ss-inline"><Status status={item.status} label={activityStatus(item)} /><code class="ss-id">{item.id}</code></div><SplitBar activity={item} /><p class="ss-assignment">{item.assignedVariationId ? (isActive(item) ? 'Assigned: ' : item.status === 'bucketed-elsewhere' ? 'Stored assignment: ' : 'Reported decision: ') + (item.variations.find((variation) => variation.id === item.assignedVariationId)?.name || item.assignedVariationId) : 'Assignment not exposed'}{matchedVariationName && <span>Matched variation: {matchedVariationName}</span>}</p></button>)}</section>)}
       </>)}
-      {tab === 'events' && <EventFeed events={current.events} paused={paused} onPause={pause} onClear={clear} />}
+      {tab === 'events' && <>{props.expectations && <Expectations rules={props.expectations.value} onChange={props.onExpectations || (() => {})} events={current.events} paused={paused} />}<EventFeed events={current.events} paused={paused} onPause={pause} onClear={clear} /></>}
       {tab === 'page' && <PageView state={current} />}
       {tab === 'settings' && <SettingsView settings={settings} onChange={setSettings} />}
       {tab === 'tools' && <ToolsView state={current} notes={notes} setNotes={setNotes} baseline={baseline} setBaseline={setBaseline} settings={settings} onSettings={setSettings} onHighlight={highlight} />}
