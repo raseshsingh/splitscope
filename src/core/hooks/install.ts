@@ -32,6 +32,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const experiments = new Map<string, NormalizedExperiment>();
   const observed = new Map<string, NormalizedExperiment>();
   let observedUrl = location.href;
+  const evidenceTimes = new Map<string, { signature: string; at: number }>();
   let preparedPlan: AnyRecord | undefined;
   const observedPlatforms = new Set<PlatformId>();
   let eventRefreshTimer = 0;
@@ -172,7 +173,15 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       url: location.href,
       capturedAt: Date.now(),
       platforms,
-      experiments: Array.from(experiments.values()),
+      experiments: Array.from(experiments.values()).map(item => {
+        if (item.evidence) return item;
+        const key = item.platform + ':' + item.id;
+        const signature = JSON.stringify([location.href, item.status, item.assignedVariationId]);
+        const previous = evidenceTimes.get(key);
+        const at = previous?.signature === signature ? previous.at : Date.now();
+        evidenceTimes.set(key, { signature, at });
+        return { ...item, evidence: { state: item.status === 'running-in' ? 'assigned' as const : item.status === 'bucketed-elsewhere' ? 'stored' as const : 'detected' as const, observedAt: at, pageUrl: location.href } };
+      }),
       page: { title: document.title, referrer: document.referrer, readyState: document.readyState }
     };
   }
@@ -193,7 +202,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         const plan = adapter?.force?.(String(payload.experimentId), String(payload.variationId), location.href);
         if (!plan) throw new Error('Variation switching is unavailable.');
         preparedPlan = plan as AnyRecord;
-        post('status', { message: 'force-plan', requestId: message.requestId, request: { experiment: payload.experimentName, variation: payload.variationName }, plan });
+        post('status', { message: 'force-plan', requestId: message.requestId, request: { platform: payload.platform, experimentId: payload.experimentId, variationId: payload.variationId, experiment: payload.experimentName, variation: payload.variationName }, plan });
       } catch (error) { post('status', { message: 'force-error', requestId: message.requestId, error: String(error) }); }
       return;
     }

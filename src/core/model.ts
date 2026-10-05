@@ -50,6 +50,7 @@ export interface NormalizedExperiment {
   kind: 'ab' | 'mvt' | 'split-url' | 'personalization' | 'feature-flag' | 'survey' | 'recommendation' | 'other';
   status: ExperimentStatus;
   statusReason?: string;
+  evidence?: { state: 'applied' | 'assigned' | 'stored' | 'detected' | 'failed'; observedAt: number; pageUrl: string };
   variations: NormalizedVariation[];
   changes?: NormalizedChange[];
   assignedVariationId?: string;

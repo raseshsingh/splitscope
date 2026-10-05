@@ -83,6 +83,7 @@ export function normalizedExperiment(input: Partial<NormalizedExperiment> & Pick
     kind: input.kind || 'other',
     status: input.status || 'unknown',
     statusReason: input.statusReason,
+    evidence: input.evidence,
     variations: input.variations || [],
     changes: input.changes || variationChanges(input.raw),
     assignedVariationId: input.assignedVariationId,

@@ -1,3 +1,4 @@
+import { createPreview, resetPreviewUrl } from '../src/core/qa/preview';
 import { render, Component, type ComponentChildren } from 'preact';
 import { diagnostic, diagnostics } from '../src/core/diagnostics';
 import { signal } from '@preact/signals';
@@ -56,6 +57,7 @@ export default defineContentScript({
     const requestedExperiment = signal<{ platform: string; id: string; requestId: number } | null>(null);
     const settings = signal(defaultSettings);
     const requestedTab = signal<{ tab: PanelTab; requestId: number }>({ tab: 'activities', requestId: 0 });
+    void send({ type: 'preview.get' }).then(record => { if (record?.origin === location.origin && Date.now() - record.startedAt < 86400000) { state.value = { ...state.value, preview: record }; requestedExperiment.value = { platform: record.platform, id: record.experimentId, requestId: Date.now() }; } }).catch(error => diagnostic('bridge', 'Could not restore preview', error));
     const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) settings.value = normalizeSettings(result?.['splitscope:settings']); }).catch(error => diagnostic('bridge', 'Could not load settings', error));
     const onSettingsChanged = (changes: Record<string, any>, area: string) => {
       if (isAlive() && area === 'local' && changes['splitscope:settings']) settings.value = normalizeSettings(changes['splitscope:settings'].newValue);
@@ -88,7 +90,7 @@ export default defineContentScript({
         mode: 'closed',
         isolateEvents: ['keydown', 'keyup', 'keypress'],
         onMount(container) {
-          render(<PanelBoundary><App state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onForceExecute={(plan, target) => { if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) void send({ type: 'preview.open', url: plan.url }).catch(error => report('Could not open preview tab', error)); else command('executeForcePlan', { plan }); }} /></PanelBoundary>, container);
+          render(<PanelBoundary><App state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
           return container;
         },
         onRemove(container) { uiMounted = false; if (container) render(null, container); }

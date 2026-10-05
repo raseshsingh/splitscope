@@ -10,7 +10,7 @@ const eventWrites = new Map<number, Promise<unknown>>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(messageListener(message => ['background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
+  browser.runtime.onMessage.addListener(messageListener(message => ['preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
     if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD };
     const tabId = sender.tab?.id;
     if (message?.type === 'page.snapshot' && tabId != null) {
@@ -19,6 +19,8 @@ export default defineBackground(() => {
       queueTabStateWrite(tabId, state);
       return;
     }
+    if (message.type === 'preview.save' && tabId != null) return browser.storage.session.set({ [`splitscope:preview:${tabId}`]: message.value });
+    if (message.type === 'preview.get' && tabId != null) return browser.storage.session.get(`splitscope:preview:${tabId}`).then(value => value[`splitscope:preview:${tabId}`] || null);
     if (message?.type === 'panel.remember' && tabId != null) return browser.storage.session.set({ [`splitscope:panel:${tabId}`]: { open: message.open === true, origin: new URL(sender.url || sender.tab?.url || '').origin } });
     if (message?.type === 'panel.restore' && tabId != null) return browser.storage.session.get(`splitscope:panel:${tabId}`).then(value => value[`splitscope:panel:${tabId}`] || null);
     if (message?.type === 'preview.open' && tabId != null) {
@@ -26,7 +28,7 @@ export default defineBackground(() => {
         const url = new URL(String(message.url));
         const current = new URL(sender.url || sender.tab?.url || '');
         if (!['http:', 'https:'].includes(url.protocol) || url.origin !== current.origin) throw new Error('Preview URL must belong to this site.');
-        return (async () => { const preview = await browser.tabs.create({ url: 'about:blank', openerTabId: tabId }); if (preview.id == null) throw new Error('Chrome did not create the preview tab.'); await browser.storage.session.set({ [`splitscope:panel:${preview.id}`]: { open: true, origin: url.origin } }); await browser.tabs.update(preview.id, { url: url.href }); return { ok: true }; })();
+        return (async () => { const preview = await browser.tabs.create({ url: 'about:blank', openerTabId: tabId }); if (preview.id == null) throw new Error('Chrome did not create the preview tab.'); await browser.storage.session.set({ [`splitscope:preview:${preview.id}`]: message.preview || null, [`splitscope:panel:${preview.id}`]: { open: true, origin: url.origin } }); await browser.tabs.update(preview.id, { url: url.href }); return { ok: true }; })();
       } catch (error) { diagnostic('background', 'Could not open preview', error); return Promise.reject(error); }
     }
     if (message?.type === 'page.event' && tabId != null) {
@@ -90,7 +92,7 @@ export default defineBackground(() => {
       if (timer) clearTimeout(timer);
       pendingWrites.delete(writeKey);
     }
-    void serialEventWrite(tabId, () => browser.storage.session.remove([`splitscope:tab:${tabId}`, `splitscope:events:${tabId}`, `splitscope:panel:${tabId}`]));
+    void serialEventWrite(tabId, () => browser.storage.session.remove([`splitscope:tab:${tabId}`, `splitscope:events:${tabId}`, `splitscope:panel:${tabId}`, `splitscope:preview:${tabId}`]));
   });
 
   // Optional network capture must never prevent worker registration.

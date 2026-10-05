@@ -7,7 +7,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
 }
 export function Brand({ subtitle = 'Experimentation, in view.' }: { subtitle?: string }) { return <div class="ss-brand"><span class="ss-logo"><i /><i /><i /></span><div><strong>Splitscope<span class="ss-beta">LAB</span></strong><small>{subtitle}</small></div></div>; }
 export function IconButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) { return <button class="ss-icon-button" title={label} aria-label={label} onClick={onClick}><Icon name={icon} /></button>; }
-export function Status({ status }: { status: string }) { return <span class={'ss-status ss-status-' + status}><i />{statusNames[status] || status}</span>; }
+export function Status({ status, label }: { status: string; label?: string }) { return <span class={'ss-status ss-status-' + status}><i />{label || statusNames[status] || status}</span>; }
 export function Empty({ title, children }: { title: string; children: ComponentChildren }) { return <div class="ss-empty"><span class="ss-empty-icon"><Icon name="search" size={26} /></span><h3>{title}</h3><p>{children}</p></div>; }
 export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
   const [feedback, setFeedback] = useState('');

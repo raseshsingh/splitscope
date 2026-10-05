@@ -28,3 +28,11 @@ export function selectorConflicts(activities: NormalizedExperiment[]) {
   }
   return [...uses].filter(([, owners]) => owners.size > 1).map(([selector, owners]) => ({ selector, activities: [...owners.values()] }));
 }
+
+export function activityStatus(item: NormalizedExperiment): string {
+  if (item.evidence?.state === 'applied') return 'Applied on this page';
+  if (item.evidence?.state === 'failed') return 'Application failed';
+  if (item.status === 'running-in') return 'Assigned / delivered';
+  if (item.status === 'unknown') return 'Detected only';
+  return statusNames[item.status] || item.status;
+}

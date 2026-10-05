@@ -9,7 +9,7 @@ export default defineConfig({
     action: { default_title: 'Splitscope — open page inspector', default_icon: 'icons/idle.png' },
     name: 'Splitscope',
     description: 'Inspect experiments, variations, and platform events on the page.',
-    version: '0.1.5',
+    version: '0.1.6',
     minimum_chrome_version: '116',
     permissions: ['storage', 'scripting', 'webRequest', 'activeTab'],
     host_permissions: ['<all_urls>'],

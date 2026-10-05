@@ -25,6 +25,7 @@ export function readTargetActivities(payload: unknown, evidence: Evidence = 'cac
         name: String(tokens['activity.name'] || value.activity?.name || `Activity ${id}`),
         kind: activityKind('adobe-target', { ...tokens, activityType: value.activity?.type ?? value.activityType ?? tokens['activity.type'] }),
         status: active ? 'running-in' : 'unknown',
+        evidence: { state: evidence === 'rendered' ? 'applied' : active ? 'assigned' : evidence === 'failed' ? 'failed' : 'detected', observedAt: Date.now(), pageUrl: location.href },
         statusReason: evidence === 'rendered' ? 'Adobe confirmed successful content rendering on this page.' : active ? 'Adobe delivered this decision for the current page request. Visual rendering is not yet confirmed.' : evidence === 'failed' ? 'Adobe reported a rendering failure for this decision.' : 'Only cached or prefetched decision data is available; it does not confirm activity on this page.',
         variations: variationId != null ? [{ id: String(variationId), name: String(tokens['experience.name'] || 'Delivered experience'), changes }] : [],
         changes: variationId == null ? changes : undefined,
@@ -63,8 +64,9 @@ export const adobeTargetAdapter: PageAdapter = {
         const prior = latest.get(activity.id);
         // A sparse request event must not erase already observed rendering or code.
         const merged = prior ? { ...activity,
-          status: evidence === 'delivered' && prior.statusReason?.includes('confirmed successful') ? prior.status : activity.status,
-          statusReason: evidence === 'delivered' && prior.statusReason?.includes('confirmed successful') ? prior.statusReason : activity.statusReason,
+          status: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.status : activity.status,
+          evidence: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.evidence : activity.evidence,
+          statusReason: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.statusReason : activity.statusReason,
           variations: activity.variations.length ? activity.variations.map(v => ({ ...prior.variations.find(p => p.id === v.id), ...v, changes: v.changes || prior.variations.find(p => p.id === v.id)?.changes })) : prior.variations,
           changes: activity.changes || prior.changes,
           raw: { latest: activity.raw, previousDecision: prior.raw && (prior.raw as any).latest || prior.raw }
@@ -107,7 +109,7 @@ export const adobeTargetAdapter: PageAdapter = {
         if (key && name === 'at-request-succeeded') { pending.set(key, activities); if (pending.size > 100) pending.delete(pending.keys().next().value!); }
         // Rendering events can omit the response tokens; only correlate an explicit request/mbox.
         if (!activities.length && key && (evidence === 'rendered' || evidence === 'failed')) {
-          for (const prior of pending.get(key) || []) activities.push({ ...prior, status: evidence === 'rendered' ? 'running-in' : 'unknown', statusReason: evidence === 'rendered' ? 'Adobe confirmed successful content rendering for this request on this page.' : 'Adobe reported no rendered content or a rendering failure for this request.' });
+          for (const prior of pending.get(key) || []) activities.push({ ...prior, evidence: { state: evidence === 'rendered' ? 'applied' : 'failed', observedAt: Date.now(), pageUrl: location.href }, status: evidence === 'rendered' ? 'running-in' : 'unknown', statusReason: evidence === 'rendered' ? 'Adobe confirmed successful content rendering for this request on this page.' : 'Adobe reported no rendered content or a rendering failure for this request.' });
           pending.delete(key);
         }
         publish(activities, evidence);

@@ -1,7 +1,7 @@
 import type { Browser } from 'wxt/browser';
 
 export const BRIDGE_PROTOCOL = 3;
-export const EXTENSION_BUILD = '0.1.5';
+export const EXTENSION_BUILD = '0.1.6';
 export function errorText(error: unknown): string {
   try {
     // Native extension errors can cross execution contexts; instanceof is unreliable.

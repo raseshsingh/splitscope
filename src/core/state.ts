@@ -1,6 +1,7 @@
 import type { CapturedEvent, DetectionRecord, NormalizedExperiment } from './model';
 
 export interface PageState {
+  preview?: import('./qa/preview').PreviewRecord | null;
   url: string;
   capturedAt: number;
   platforms: DetectionRecord[];
