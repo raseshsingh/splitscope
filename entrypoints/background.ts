@@ -2,7 +2,7 @@ import { appendJourney, beginJourney, recordSnapshot, type Journey } from '../sr
 import { identifyEndpoint } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
-import { diagnostic } from '../src/core/diagnostics';
+import { diagnostic, diagnostics } from '../src/core/diagnostics';
 import { normalizeSettings } from '../src/core/settings';
 
 type TabSummary = { url?: string; platforms?: Array<{ id: string; displayName: string; state: string }>; experimentCount?: number; eventCount?: number; activeCount?: number };
@@ -12,7 +12,7 @@ const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener(messageListener(message => ['journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
-    if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD };
+    if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD, diagnostics: diagnostics() };
     const tabId = sender.tab?.id;
     if (tabId != null && message.type?.startsWith('journey.')) return manageJourney(tabId, message.type, sender.url || sender.tab?.url || '');
     if (message?.type === 'page.snapshot' && tabId != null) {

@@ -48,15 +48,20 @@ export default defineContentScript({
     try {
     const send = async (message: Record<string, unknown>): Promise<any> => {
       if (!isAlive()) return undefined;
+      let receivedReply = false;
       try {
         const reply = await browser.runtime.sendMessage(message);
-        return isAlive() ? unwrapReply(reply) : undefined;
+        receivedReply = true;
+        const value = isAlive() ? unwrapReply(reply) : undefined;
+        if (isAlive() && state.value.connection?.background !== 'connected') state.value = { ...state.value, connection: { page: 'waiting', ...state.value.connection, background: 'connected' } };
+        return value;
       } catch (error) {
         if (!isAlive() || /extension context invalidated/i.test(errorText(error))) { dispose(); return undefined; }
+        if (!receivedReply && state.value.connection?.background !== 'unavailable') state.value = { ...state.value, connection: { page: 'waiting', ...state.value.connection, background: 'unavailable' } };
         throw error;
       }
     };
-    const state = signal<PageState>(emptyPageState(location.href));
+    const state = signal<PageState>({ ...emptyPageState(location.href), connection: { background: 'connecting', page: 'waiting' } });
     const platformEvidence = new Map<string, DetectionRecord>();
     const requestedExperiment = signal<{ platform: string; id: string; requestId: number } | null>(null);
     const settings = signal(defaultSettings);
@@ -139,6 +144,9 @@ export default defineContentScript({
       if (message.type === 'hello' && message.nonce !== 'bootstrap') {
         if (nonce && nonce !== message.nonce) return;
         nonce = message.nonce;
+        const currentBuild = (message.payload as any)?.build === EXTENSION_BUILD;
+        state.value = { ...state.value, connection: { background: 'connecting', ...state.value.connection, page: currentBuild ? 'connected' : 'outdated' } };
+        if (!currentBuild) report('Reload this website to finish updating Splitscope.');
         console.info('[Splitscope/bridge] Connected to page hook');
         window.postMessage({ namespace: '__splitscope__', nonce, type: 'ready' }, '*');
         command('captureOptions', { analytics: settings.value.analyticsCapture });
@@ -156,6 +164,7 @@ export default defineContentScript({
           ...state.value,
           url: typeof payload.url === 'string' ? payload.url : location.href,
           capturedAt: Number(payload.capturedAt) || Date.now(),
+          connection: { background: 'connecting', page: 'connected', ...state.value.connection, lastSnapshot: Date.now() },
           platforms: Array.isArray(payload.platforms) ? payload.platforms as DetectionRecord[] : [],
           experiments: Array.isArray(payload.experiments) ? payload.experiments as NormalizedExperiment[] : [],
           page: payload.page || state.value.page
@@ -206,7 +215,7 @@ export default defineContentScript({
       if (message?.type === 'panel.executeForce') command('executeForcePlan', message.payload);
       if (message?.type === 'panel.pauseEvents') eventsPaused = Boolean(message.value);
       if (message?.type === 'page.networkEvent' && message.event && !eventsPaused) {
-        const incoming = parseEvent(message.event);
+        const incoming = parseEvent({ ...message.event, pageUrl: message.event.pageUrl || location.href });
         if (!incoming) { report('Rejected event record', 'Unsupported event shape'); return; }
         checkRun.value = recordCheck(checkRun.value, incoming);
         state.value = { ...state.value, events: [...state.value.events, incoming].slice(-5000) };
@@ -217,7 +226,16 @@ export default defineContentScript({
     cleanup.push(() => browser.runtime.onMessage.removeListener(onRuntimeMessage));
     const journeyTimer = window.setInterval(() => { if (isAlive() && uiMounted) { const request = journeyRequest; void send({ type: 'journey.get' }).then(value => { if (isAlive() && request === journeyRequest && JSON.stringify(journey.value) !== JSON.stringify(value || null)) journey.value = value || null; }).catch(error => report('Could not load journey', error)); } }, 2500);
     cleanup.push(() => window.clearInterval(journeyTimer));
-    const healthTimer = window.setInterval(() => { isAlive(); }, 1000);
+    let checkingHealth = false;
+    const checkHealth = async () => {
+      if (!isAlive() || checkingHealth) return;
+      checkingHealth = true;
+      try { const reply = await send({ type: 'background.ping' }); if (isAlive()) state.value = { ...state.value, connection: { page: 'waiting', ...state.value.connection, background: reply?.ok ? 'connected' : 'unavailable', backgroundDiagnostics: reply?.diagnostics || [] } }; }
+      catch { /* send has already updated the visible connection state. */ }
+      finally { checkingHealth = false; }
+    };
+    void checkHealth();
+    const healthTimer = window.setInterval(() => { if (isAlive() && uiMounted) void checkHealth(); }, 15000);
     cleanup.push(() => window.clearInterval(healthTimer));
     window.postMessage({ namespace: '__splitscope__', nonce: 'bootstrap', type: 'hello' }, '*');
     console.info('[Splitscope/bridge] Inspector initialized', { protocol: BRIDGE_PROTOCOL, build: EXTENSION_BUILD, instanceId });

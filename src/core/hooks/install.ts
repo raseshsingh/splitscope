@@ -1,3 +1,4 @@
+import { EXTENSION_BUILD } from '../extension/messages';
 import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
 import { identifyEndpoint } from '../platform-endpoints';
@@ -229,7 +230,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   function onWindowMessage(event: MessageEvent): void {
     if (event.source !== window) return;
     const message = parseBridgeMessage(event.data);
-    if (message?.type === 'hello' && message.nonce === 'bootstrap') { window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello' }, '*'); return; }
+    if (message?.type === 'hello' && message.nonce === 'bootstrap') { window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello', payload: { build: EXTENSION_BUILD } }, '*'); return; }
     if (!message || message.nonce !== nonce) return;
     if (message.type === 'ready') {
       connected = true;
@@ -248,7 +249,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   installNetworkHooks(emit, cleanups, () => analyticsEnabled);
   installHistoryHooks(emit, cleanups, publish);
   const retryUntilReady = () => {
-    if (!connected && performance.now() - started < 1500) window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello' }, '*');
+    if (!connected && performance.now() - started < 1500) window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello', payload: { build: EXTENSION_BUILD } }, '*');
     else window.clearInterval(helloTimer);
   };
   helloTimer = window.setInterval(retryUntilReady, 40);

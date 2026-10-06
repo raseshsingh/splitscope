@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { pretty, statusNames } from '../../core/qa/presentation';
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -8,11 +8,13 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
 export function Brand({ subtitle = 'Experimentation, in view.' }: { subtitle?: string }) { return <div class="ss-brand"><span class="ss-logo"><i /><i /><i /></span><div><strong>Splitscope<span class="ss-beta">LAB</span></strong><small>{subtitle}</small></div></div>; }
 export function IconButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) { return <button class="ss-icon-button" title={label} aria-label={label} onClick={onClick}><Icon name={icon} /></button>; }
 export function Status({ status, label }: { status: string; label?: string }) { return <span class={'ss-status ss-status-' + status}><i />{label || statusNames[status] || status}</span>; }
-export function Empty({ title, children }: { title: string; children: ComponentChildren }) { return <div class="ss-empty"><span class="ss-empty-icon"><Icon name="search" size={26} /></span><h3>{title}</h3><p>{children}</p></div>; }
+export function Empty({ title, children }: { title: string; children: ComponentChildren }) { return <div class="ss-empty"><span class="ss-empty-icon"><Icon name="search" size={26} /></span><h3>{title}</h3><div class="ss-empty-body">{children}</div></div>; }
 export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
   const [feedback, setFeedback] = useState('');
-  const copy = async () => { try { await navigator.clipboard.writeText(value); setFeedback('Copied'); } catch { setFeedback('Copy unavailable'); } setTimeout(() => setFeedback(''), 2200); };
-  return <button class="ss-button ss-small" onClick={() => void copy()}><Icon name={feedback === 'Copied' ? 'check' : 'copy'} size={13} />{feedback || label}</button>;
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = async () => { try { await navigator.clipboard.writeText(value); setFeedback('Copied'); } catch { setFeedback('Copy unavailable'); } clearTimeout(timer.current); timer.current = setTimeout(() => setFeedback(''), 2200); };
+  return <button class="ss-button ss-small" aria-live="polite" onClick={() => void copy()}><Icon name={feedback === 'Copied' ? 'check' : 'copy'} size={13} />{feedback || label}</button>;
 }
 export function JsonTree({ value, label = 'Payload', depth = 0, defaultOpen = false }: { value: unknown; label?: string; depth?: number; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);

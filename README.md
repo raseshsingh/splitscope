@@ -18,7 +18,7 @@ The current build has detection adapters for: Adobe Target, Optimizely, VWO, Kam
 
 The hook observes API commands, documented lifecycle events, selected page-world network calls, and image-pixel requests. The event buffer is memory-only by default. Enabling **Keep event log across page loads** stores a sanitized session log in Chrome session storage and restores it when the page loads again.
 
-Variation switching is still in active development. The confirmation dialog shows the adapter's proposed method and its reported tracking impact. Runtime formats and force behaviour need verification against live platform installs before relying on them for client QA. Safe mode and universal visitor-assignment reset are not implemented. Preview parameter reset only restores URL parameters changed by Splitscope; persistent vendor assignments require vendor controls. The existing plan uses Kameleoon; Chameleon is a separate product and is not implemented.
+Variation switching is still in active development. The confirmation dialog shows the adapter's proposed method and its reported tracking impact. Runtime formats and force behaviour need verification against live platform installs before relying on them for client QA. Safe mode and universal visitor-assignment reset are not implemented. Preview reset restores URL parameters and direct variant paths changed by Splitscope; persistent vendor assignments require vendor controls. The existing plan uses Kameleoon; Chameleon is a separate product and is not implemented.
 
 ## Development commands
 
@@ -61,14 +61,20 @@ See [preview and detection changes](docs/preview-and-detection.md) for the API r
 
 After upgrading, reload Splitscope on `chrome://extensions` and refresh existing website tabs once. Old scripts already injected into those tabs cannot be updated by rebuilding the extension folder alone.
 
-## QA workflows (0.1.9)
+## QA workflows (0.1.10)
 
 - **Activities:** evidence distinguishes assigned/delivered, applied, stored, and detected-only states. Pin activities from their detail view; filters and selection are saved per site.
-- **Events → Event expectations:** save exact event names, source, required property paths, and expected JSON values. Start a check, perform an action, finish before leaving Events, and copy results. Checks use the retained buffer and cannot establish vendor ingestion.
+- **Events → Event checks:** save exact event names, source, required property paths, and expected JSON values. Start a check, perform an action, finish, and copy results. Checks accumulate independently of the event list and survive panel reopening in the same document. Reloading ends the check. Paused recording is reported as incomplete; observations cannot establish vendor ingestion.
 - **Settings → Capture analytics calls:** opt in to future default dataLayer, Google tag, exposed Segment and AppMeasurement calls, plus recognized outgoing transport endpoints. Renamed globals, private SDKs and first-party proxy endpoints can be unavailable.
-- **Tools → Site workspace:** local per-origin name, notes, filters, pins, baseline and expectations. Export or clear explicitly. Workspace changes are shared by tabs on the same origin. Exports are sanitized; review before sharing.
-- **Tools → Journey recording:** opt-in tab/session history across reloads and SPA navigation on the starting origin. Other origins are excluded. Stop, export, or delete; starting a new recording requires deleting the old one. Retains up to 500 entries / 750 KB plus a bounded decision cache. It does not require Keep event log. Paused capture and missing pre-hook events remain gaps.
-- **Tools → Compare assignments:** persistent baseline, timestamp/page, before/after status, variation and feature value.
+- **Tools → Workspace:** local per-origin name, notes, filters, pins, baseline and expectations. Export or clear explicitly. Workspace changes are shared by tabs on the same origin. Exports are sanitized; review before sharing.
+- **Tools → Journey:** opt-in tab/session history across reloads and SPA navigation on the starting origin. Other origins are excluded. Stop, export, or delete; starting a new recording requires confirmation before replacing the old one. Retains up to 500 entries / 750 KB plus a bounded decision cache. It does not require Keep event log. Paused capture and missing pre-hook events remain gaps.
+- **Tools → Compare:** persistent baseline, timestamp/page, before/after status, variation and feature value.
 - **GrowthBook / Statsig / PostHog:** initial observation-only integrations, with no switching controls. Coverage depends on exposed instances; project enumeration is partial. Statsig lists observed evaluations only; PostHog flags are not assumed to be experiments.
 
 See [phase progress and limitations](docs/phase-progress.md). These changes passed compilation and production builds; they have not been verified on live vendor installs.
+
+## October polish pass
+
+Version 0.1.10 simplifies activity filters, keeps event checks collapsed by default, and separates report, comparison, journey and workspace tools. Activity details adapt to flags and experiments. Page and Settings show connection health and provide copyable diagnostics, including background errors.
+
+Runtime changes improve endpoint matching, observation timestamps, navigation handling, preview reset and storage updates. See [polish review](docs/polish-review.md) for completed phases and validation limits.

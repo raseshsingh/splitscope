@@ -1,6 +1,8 @@
 import type { CapturedEvent, DetectionRecord, NormalizedExperiment } from './model';
 
+export interface ConnectionHealth { background: 'connecting' | 'connected' | 'unavailable'; page: 'waiting' | 'connected' | 'outdated'; lastSnapshot?: number; backgroundDiagnostics?: unknown[] }
 export interface PageState {
+  connection?: ConnectionHealth;
   preview?: import('./qa/preview').PreviewRecord | null;
   url: string;
   capturedAt: number;

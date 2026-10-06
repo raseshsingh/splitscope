@@ -21,3 +21,14 @@ Validation: TypeScript and Chrome production build completed. No automated tests
 - Workspace/expectation writes are serialized, and local storage echoes cannot replace text with an older in-flight value while typing. Journey polling cannot overwrite a later user action with an older response. Journey size limits account for encoded size.
 
 Validation: TypeScript and Chrome production build completed. No automated tests or live vendor validation run.
+
+## Phase C — Interface and maintainability
+
+- Compact activity headings, current-page/configuration grouping, pin markers and a single filter reset make lists easier to scan. Detected-platform buttons open the matching list with other filters cleared. Stale saved filters remain visible and removable.
+- Flag/configuration details emphasize reported values; missing traffic splits no longer add noise to activity cards. Platform capability notes explain partial coverage.
+- Tools are split into Report, Compare, Journey and Workspace. The app's activity details, page information, preview dialog and reports now live in separate components.
+- Event checks use a compact disclosure. Empty event results offer Show all events, frozen lists keep matching filter options, and styles improve small-screen wrapping, inputs, focus feedback and long IDs.
+- Page and Settings show capture/background connection state, last snapshot, build mismatch guidance and combined copyable diagnostics. Background application errors are distinguished from transport failures. Older page hooks require a reload.
+- The legacy options page reuses the panel settings component. Legacy popup actions respect error replies. Version bumped to 0.1.10.
+
+Validation: TypeScript and Chrome production build completed. No automated tests or live vendor validation run. Visual preview review could not be completed: the local server was initially stopped, and after restarting it the in-app browser's URL policy blocked operations on its generated error page. No updated screenshot captured. The design server remains available at http://127.0.0.1:5178/dev/index.html.
