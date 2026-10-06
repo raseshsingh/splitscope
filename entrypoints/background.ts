@@ -1,5 +1,5 @@
 import { appendJourney, beginJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
-import { isTargetEndpoint } from '../src/core/target-evidence';
+import { identifyEndpoint } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
 import { diagnostic } from '../src/core/diagnostics';
@@ -73,6 +73,7 @@ export default defineBackground(() => {
       const reply = await sendToTab(tab.id, { type: 'panel.open' });
       if (reply?.ok !== true || reply?.mounted !== true) throw new Error('The page did not confirm that the inspector opened. Reload the website and try again.');
     } catch (error) {
+      badgeStates.delete(tab.id);
       diagnostic('background', 'Could not open inspector. Reload the website; Chrome internal pages cannot be inspected.', error);
       await browser.action.setBadgeText({ tabId: tab.id, text: '!' });
       await browser.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#b73733' });
@@ -91,6 +92,7 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onRemoved.addListener((tabId) => {
+    badgeStates.delete(tabId);
     for (const suffix of ['state', 'events']) {
       const writeKey = `${tabId}:${suffix}`;
       const timer = pendingWrites.get(writeKey);
@@ -103,11 +105,11 @@ export default defineBackground(() => {
 
   // Optional network capture must never prevent worker registration.
   try { browser.webRequest.onBeforeRequest.addListener((details) => {
-    const platform = identifyHost(details.url);
+    const platform = identifyEndpoint(details.url);
     if (!platform || details.tabId < 0 || details.type !== 'image') return undefined;
     browser.tabs.sendMessage(details.tabId, {
       type: 'page.networkEvent',
-      event: { id: `${Date.now()}-${details.requestId}`, t: Date.now(), platform, category: 'network', name: `${details.method} ${safeUrl(details.url)}`, via: 'network', properties: { type: details.type } }
+      event: { id: `${Date.now()}-${details.requestId}`, t: Date.now(), platform, category: 'network', name: `${details.method} ${safeUrl(details.url)}`, via: 'network', pageUrl: details.initiator, properties: { type: details.type } }
     }).catch(() => {});
     return undefined;
   }, { urls: ['<all_urls>'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
@@ -151,7 +153,7 @@ function queueTabStateWrite(tabId: number, summary: TabSummary): void {
   const previous = pendingWrites.get(writeKey);
   if (previous) clearTimeout(previous);
   pendingWrites.set(writeKey, setTimeout(() => {
-    void browser.storage.session.get(key).then((current) => browser.storage.session.set({ [key]: { ...(current[key] || {}), ...summary, updatedAt: Date.now() } }));
+    void browser.storage.session.get(key).then((current) => browser.storage.session.set({ [key]: { ...(current[key] || {}), ...summary, updatedAt: Date.now() } })).catch(error => diagnostic('background', 'Could not save page summary', error));
     pendingWrites.delete(writeKey);
   }, 500));
 }
@@ -184,29 +186,20 @@ function queueTabEventWrite(tabId: number, event: unknown): Promise<unknown> {
   return batch.done;
 }
 
+const badgeStates = new Map<number, string>();
 function updateBadge(tabId: number, count: number, detected: boolean): void {
-  const value = count > 99 ? '99+' : detected ? String(count) : '';
-  void Promise.resolve().then(() => browser.action.setIcon({ tabId, path: detected ? 'icons/detected.png' : 'icons/idle.png' })).catch(error => diagnostic('background', 'Toolbar icon unavailable', error));
-  void browser.action.setTitle({ tabId, title: detected ? `Splitscope: ${count} current decisions — open inspector` : 'Splitscope: no platform detected yet — open inspector' });
-  void browser.action.setBadgeText({ tabId, text: value });
-  void browser.action.setBadgeBackgroundColor({ tabId, color: detected ? '#08764f' : '#66758a' });
-}
-
-function identifyHost(raw: string): string | undefined {
-  try {
-    const host = new URL(raw).hostname.toLowerCase();
-    if (/optimizely|logx\.optimizely/.test(host)) return 'optimizely';
-    if (isTargetEndpoint(raw)) return 'adobe-target';
-    if (/visualwebsiteoptimizer|vwo\.com/.test(host)) return 'vwo';
-    if (/kameleoon/.test(host)) return 'kameleoon';
-    if (/abtasty/.test(host)) return 'ab-tasty';
-    if (/convertexperiments/.test(host)) return 'convert';
-    if (/dynamicyield/.test(host)) return 'dynamic-yield';
-    if (/unbounce|ubembed/.test(host)) return 'unbounce';
-    if (/monetate/.test(host)) return 'monetate';
-    if (/pagesense/.test(host)) return 'pagesense';
-    if (/onesignal/.test(host)) return 'onesignal';
-  } catch {}
+  count = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  const signature = `${count}:${detected}`;
+  if (badgeStates.get(tabId) === signature) return;
+  badgeStates.set(tabId, signature);
+  void Promise.resolve().then(async () => {
+    await Promise.all([
+      browser.action.setIcon({ tabId, path: detected ? 'icons/detected.png' : 'icons/idle.png' }),
+      browser.action.setTitle({ tabId, title: detected ? `Splitscope: ${count} current decisions — open inspector` : 'Splitscope: no platform detected yet — open inspector' }),
+      browser.action.setBadgeText({ tabId, text: count > 99 ? '99+' : detected ? String(count) : '' }),
+      browser.action.setBadgeBackgroundColor({ tabId, color: detected ? '#08764f' : '#66758a' }),
+    ]);
+  }).catch(error => { badgeStates.delete(tabId); diagnostic('background', 'Could not update toolbar', error); });
 }
 
 function safeUrl(raw: string): string {
@@ -237,13 +230,25 @@ function serialJourneyWrite<T>(tabId: number, action: () => Promise<T>): Promise
   void pending.finally(() => { if (journeyWrites.get(tabId) === pending) journeyWrites.delete(tabId); }).catch(() => {});
   return pending;
 }
-function updateJourney(tabId: number, update: (journey: Journey) => boolean) {
-  return serialJourneyWrite(tabId, async () => {
+const journeyBatches = new Map<number, { updates: Array<(journey: Journey) => boolean>; done: Promise<unknown> }>();
+function updateJourney(tabId: number, update: (journey: Journey) => boolean): Promise<unknown> {
+  const pending = journeyBatches.get(tabId);
+  if (pending && pending.updates.length < 1000) { pending.updates.push(update); return pending.done; }
+  const batch = { updates: [update], done: Promise.resolve() as Promise<unknown> };
+  batch.done = serialJourneyWrite(tabId, async () => {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    if (journeyBatches.get(tabId) === batch) journeyBatches.delete(tabId);
     const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);
     const journey = saved[key] as Journey | undefined;
-    if (journey && update(journey)) await browser.storage.session.set({ [key]: journey });
+    if (!journey) return;
+    let changed = false;
+    for (const apply of batch.updates) { try { changed = apply(journey) || changed; } catch (error) { diagnostic('background', 'Could not record journey observation', error); } }
+    if (changed) await browser.storage.session.set({ [key]: journey });
   });
+  journeyBatches.set(tabId, batch);
+  return batch.done;
 }
+
 function manageJourney(tabId: number, type: string, url: string) {
   return serialJourneyWrite(tabId, async () => {
     const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);

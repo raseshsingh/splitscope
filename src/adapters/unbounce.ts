@@ -6,8 +6,8 @@ export const unbounceAdapter: PageAdapter = {
   id: 'unbounce', displayName: 'Unbounce', category: 'experimentation',
   detect() {
     const win = window as any;
-    if (win.ub?.page || win.lp || document.querySelector('.lp-pom-body')) return detection('active', [win.ub?.page ? 'window.ub.page' : 'Unbounce landing-page markup'], win.ub?.page ? 0.98 : 0.78);
-    if (/unbouncepages\.com|ubpages\.com/.test(location.hostname)) return detection('active', ['Unbounce hosted domain'], 0.72);
+    if (win.ub?.page || document.querySelector('.lp-pom-body')) return detection('active', [win.ub?.page ? 'window.ub.page' : 'Unbounce landing-page markup'], win.ub?.page ? 0.98 : 0.78);
+    if (/(^|\.)(unbouncepages|ubpages)\.com$/.test(location.hostname)) return detection('active', ['Unbounce hosted domain'], 0.72);
     if (document.querySelector('script[src*="ubembed.com"]')) return detection('loading', ['Unbounce embed script'], 0.7);
     return detection('blocked', [], 0);
   },
@@ -25,7 +25,8 @@ export const unbounceAdapter: PageAdapter = {
   force(experimentId, variationId, pageUrl) {
     const url = new URL(pageUrl);
     const letter = variationId.replace(/^variant\s*/i, '').toLowerCase();
-    const path = url.pathname.replace(/\/[a-z]\.html$/i, '');
+    if (!/^[a-z]$/.test(letter)) throw new Error('Unbounce preview requires a single-letter variant ID.');
+    const path = url.pathname.replace(/\/[a-z]\.html$/i, '').replace(/\/$/, '');
     url.pathname = `${path}/${letter}.html`;
     return { method: 'url', url: url.href, tracking: 'disabled', explanation: 'Unbounce opens the page variant directly. These QA visits are not counted in Unbounce test statistics.' };
   }

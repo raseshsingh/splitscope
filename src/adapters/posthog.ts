@@ -24,8 +24,8 @@ export const posthogAdapter: PageAdapter = {
           helpers.addExperiment(flag(args[0], value === undefined ? result : value, true));
         }
       });
-      if (typeof ph.onFeatureFlags === 'function') { const remove = ph.onFeatureFlags((_keys: unknown, variants: unknown, context: any) => helpers.emit({ platform: 'posthog', category: context?.errorsLoading ? 'error' : 'lifecycle', name: 'Feature flags loaded', properties: { variants, context }, via: 'listener' })); if (typeof remove === 'function') helpers.addCleanup(remove); }
+      if (typeof ph.onFeatureFlags === 'function') { const remove = ph.onFeatureFlags((_keys: unknown, variants: unknown, context: any) => { helpers.invalidate('posthog'); helpers.emit({ platform: 'posthog', category: context?.errorsLoading ? 'error' : 'lifecycle', name: 'Feature flags loaded', properties: { variants, context }, via: 'listener' }); }); if (typeof remove === 'function') helpers.addCleanup(remove); }
     };
-    attach(); const timer = setInterval(attach, 500); helpers.addCleanup(() => clearInterval(timer));
+    const safeAttach = () => { try { attach(); } catch {} }; safeAttach(); const timer = setInterval(safeAttach, 500); helpers.addCleanup(() => clearInterval(timer));
   }
 };

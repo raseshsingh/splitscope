@@ -1,19 +1,11 @@
 import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
-import { isTargetEndpoint } from '../target-evidence';
+import { identifyEndpoint } from '../platform-endpoints';
 import { diagnostic } from '../diagnostics';
 import { parseBridgeMessage } from '../bridge/protocol';
 import { sanitize } from '../sanitize';
 import type { CapturedEvent, DetectionRecord, NormalizedExperiment, PlatformId } from '../model';
 import type { AnyRecord, HookHelpers, PageAdapter } from './runtime';
-
-const platformHosts: Array<[RegExp, PlatformId]> = [
-  [/(^|\.)growthbook\.io$/i, 'growthbook'], [/(^|\.)(statsigapi\.net|statsig\.com)$/i, 'statsig'], [/(^|\.)posthog\.com$/i, 'posthog'],
-  [/optimizely|logx\.optimizely/i, 'optimizely'], 
-  [/visualwebsiteoptimizer|vwo\.com/i, 'vwo'], [/kameleoon/i, 'kameleoon'], [/abtasty|ariane\.abtasty/i, 'ab-tasty'],
-  [/convertexperiments/i, 'convert'], [/dynamicyield|dy\.com/i, 'dynamic-yield'], [/unbounce|ubembed/i, 'unbounce'],
-  [/monetate/i, 'monetate'], [/pagesense/i, 'pagesense'], [/onesignal/i, 'onesignal']
-];
 
 export interface HookSnapshot {
   url: string;
@@ -55,6 +47,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   };
 
   const emit: HookHelpers['emit'] = (event) => {
+    try {
     const caller = captureCaller();
     const references = (Array.isArray(event.properties) ? event.properties.find(value => value && typeof value === 'object' && ('experimentId' in value || 'activityId' in value)) : event.properties) as AnyRecord | undefined;
     const referenceId = references?.experimentId ?? references?.activityId;
@@ -72,6 +65,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     post('event', normalized);
     if (adapterById.has(event.platform as PlatformId)) observedPlatforms.add(event.platform as PlatformId);
     if (!eventRefreshTimer) eventRefreshTimer = window.setTimeout(() => { eventRefreshTimer = 0; publish(); }, 100);
+    } catch { /* Observation must not interrupt the site's original API or request. */ }
   };
 
   const helpers: HookHelpers = {
@@ -94,9 +88,10 @@ export function installHookEngine(adapters: PageAdapter[]): void {
           const command = args[0] as AnyRecord | undefined;
           if (!(platform === 'optimizely' && ['addListener', 'removeListener'].includes(command?.type) && String(command?.token).startsWith('splitscope:'))) emit({ platform, category: category || inferCategory(String(eventName?.(args) || method)), name: String(eventName?.(args) || method), properties: args, via: 'api-call' });
         } catch {}
+        const callUrl = location.href;
         const result = Reflect.apply(original, this, args);
         if (observe) {
-          const inspect = (value: unknown) => { try { observe(args, value); } catch {} };
+          const inspect = (value: unknown) => { try { if (location.href === callUrl) observe(args, value); } catch {} };
           if (result && typeof (result as any).then === 'function') void Promise.resolve(result).then(inspect, () => {});
           else inspect(result);
         }
@@ -118,9 +113,10 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     clean: sanitize,
     addExperiment(experiment) {
       if (!experiment.id) return;
-      if (observedUrl !== location.href) { observed.clear(); observedUrl = location.href; }
-      observed.set(`${experiment.platform}:${experiment.id}`, experiment);
+      if (observedUrl !== location.href) { observed.clear(); evidenceTimes.clear(); observedUrl = location.href; }
+      observed.set(`${experiment.platform}:${experiment.id}`, { ...experiment, evidence: experiment.evidence || { state: experiment.status === 'running-in' ? 'assigned' : experiment.status === 'bucketed-elsewhere' ? 'stored' : 'detected', observedAt: Date.now(), pageUrl: location.href } });
     },
+    invalidate(platform) { for (const [key, item] of observed) if (item.platform === platform) observed.delete(key); },
     addCleanup(fn) { cleanups.push(fn); }
   };
 
@@ -154,9 +150,9 @@ export function installHookEngine(adapters: PageAdapter[]): void {
 
   function scan(): HookSnapshot {
     const platforms: DetectionRecord[] = [];
-    for (const refresh of refreshHooks) refresh();
+    for (const refresh of refreshHooks) { try { refresh(); } catch {} }
     experiments.clear();
-    if (observedUrl !== location.href) { observed.clear(); observedUrl = location.href; }
+    if (observedUrl !== location.href) { observed.clear(); evidenceTimes.clear(); observedUrl = location.href; }
     for (const [key, value] of observed) experiments.set(key, value);
     for (const adapter of adapters) {
       try {
@@ -184,6 +180,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         const previous = evidenceTimes.get(key);
         const at = previous?.signature === signature ? previous.at : Date.now();
         evidenceTimes.set(key, { signature, at });
+        if (evidenceTimes.size > 3000) evidenceTimes.delete(evidenceTimes.keys().next().value!);
         return { ...item, evidence: { state: item.status === 'running-in' ? 'assigned' as const : item.status === 'bucketed-elsewhere' ? 'stored' as const : 'detected' as const, observedAt: at, pageUrl: location.href } };
       }),
       page: { title: document.title, referrer: document.referrer, readyState: document.readyState }
@@ -223,6 +220,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   function stop(): void {
     if (stopped) return;
     stopped = true;
+    window.clearTimeout(eventRefreshTimer);
     window.clearInterval(helloTimer);
     cleanups.reverse().forEach((cleanup) => { try { cleanup(); } catch {} });
     window.removeEventListener('message', onWindowMessage);
@@ -351,7 +349,7 @@ function inferCategory(name: string): CapturedEvent['category'] {
 }
 
 function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>, analytics: () => boolean): void {
-  const classify = (raw: string) => { try { const url = new URL(raw, location.href); return isTargetEndpoint(url.href) ? 'adobe-target' as const : platformHosts.find(([pattern]) => pattern.test(url.hostname))?.[1] || (analytics() ? analyticsEndpoint(url.href) : undefined); } catch { return undefined; } };
+  const classify = (raw: string) => { try { const url = new URL(raw, location.href); return identifyEndpoint(url.href) || (analytics() ? analyticsEndpoint(url.href) : undefined); } catch { return undefined; } };
   const originalFetch = window.fetch;
   const fetchWrapper: typeof window.fetch = function (this: Window, input: RequestInfo | URL, init?: RequestInit) {
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;

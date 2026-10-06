@@ -21,6 +21,7 @@ export interface HookHelpers {
   listen(name: string, handler: (event: Event) => void): void;
   clean(value: unknown): unknown;
   addExperiment(experiment: NormalizedExperiment): void;
+  invalidate(platform: PlatformId): void;
   addCleanup(fn: () => void): void;
 }
 

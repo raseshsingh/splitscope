@@ -26,6 +26,7 @@ export const statsigAdapter: PageAdapter = {
       // Read the return values of the site's calls; do not evaluate flags ourselves.
       for (const method of ['getExperiment', 'getFeatureGate', 'getDynamicConfig', 'getLayer']) helpers.wrapMethod(client, method, 'statsig', args => `${method}: ${args[0]}`, 'decision', (_args, value) => observe(method, value));
       const listener = (event: any) => {
+        if (event?.name === 'values_updated') helpers.invalidate('statsig');
         if (event?.name === 'log_event_called') helpers.emit({ platform: 'statsig', category: 'custom', name: String(event.event?.eventName || 'Statsig event'), properties: event.event, via: 'listener' });
         else if (['gate_evaluation', 'experiment_evaluation', 'dynamic_config_evaluation', 'layer_evaluation'].includes(event?.name)) {
           const mapping: Record<string, [string, string]> = { gate_evaluation: ['getFeatureGate', 'gate'], experiment_evaluation: ['getExperiment', 'experiment'], dynamic_config_evaluation: ['getDynamicConfig', 'dynamicConfig'], layer_evaluation: ['getLayer', 'layer'] };
@@ -35,6 +36,6 @@ export const statsigAdapter: PageAdapter = {
       };
       client.on('*', listener); helpers.addCleanup(() => client.off?.('*', listener));
     } };
-    attach(); const timer = setInterval(attach, 500); helpers.addCleanup(() => clearInterval(timer));
+    const safeAttach = () => { try { attach(); } catch {} }; safeAttach(); const timer = setInterval(safeAttach, 500); helpers.addCleanup(() => clearInterval(timer));
   }
 };

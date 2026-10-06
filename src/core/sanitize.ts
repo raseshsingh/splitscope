@@ -8,6 +8,8 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
   const seen = new WeakSet<object>();
   let budget = maxBytes;
   const visit = (input: unknown, depth: number, key = ''): unknown => {
+    if (budget <= 0) return '[payload truncated]';
+    budget -= 8 + key.length;
     if (!(key === 'responseTokens' && input && typeof input === 'object') && SECRET_KEY.test(key)) return '[redacted]';
     if (input === null || input === undefined || typeof input === 'boolean' || typeof input === 'number') return input;
     if (typeof input === 'bigint') return `${input}n`;
@@ -31,10 +33,19 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
     if (typeof input !== 'object' || input === null) return String(input);
     if (seen.has(input)) return '[circular]';
     seen.add(input);
-    if (input instanceof Map) return Array.from(input.entries()).slice(0, MAX_ITEMS).map(([k, v]) => [visit(k, depth + 1), visit(v, depth + 1)]);
-    if (input instanceof Set) return Array.from(input.values()).slice(0, MAX_ITEMS).map((item) => visit(item, depth + 1));
-    if (Array.isArray(input)) return [...input.slice(0, MAX_ITEMS).map((item) => visit(item, depth + 1)), ...(input.length > MAX_ITEMS ? [`[${input.length - MAX_ITEMS} additional items omitted]`] : [])];
-    const output: Record<string, unknown> = {};
+    if (input instanceof Map) return visit(Array.from(input.entries()).slice(0, MAX_ITEMS), depth + 1);
+    if (input instanceof Set) return visit(Array.from(input.values()).slice(0, MAX_ITEMS), depth + 1);
+    if (Array.isArray(input)) {
+      const result: unknown[] = [];
+      for (let index = 0; index < Math.min(input.length, MAX_ITEMS); index++) {
+        if (budget <= 0) { result.push('[payload truncated]'); break; }
+        const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
+        result.push(descriptor && !('value' in descriptor) ? '[getter]' : visit(descriptor?.value, depth + 1));
+      }
+      if (input.length > MAX_ITEMS) result.push(`[${input.length - MAX_ITEMS} additional items omitted]`);
+      return result;
+    }
+    const output: Record<string, unknown> = Object.create(null);
     let keys: string[];
     try { const allKeys = Object.keys(input as object); keys = allKeys.slice(0, MAX_ITEMS); if (allKeys.length > MAX_ITEMS) output.__truncated = `${allKeys.length - MAX_ITEMS} additional fields omitted`; } catch { return '[unavailable]'; }
     for (const childKey of keys) {
