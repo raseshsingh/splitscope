@@ -1,3 +1,4 @@
+import { recordCheck, type CheckRun } from '../src/core/qa/check-run';
 import { emptyWorkspace, normalizeWorkspace, type Workspace } from '../src/core/qa/workspace';
 import type { Journey } from '../src/core/qa/journey';
 import { normalizeExpectations, type EventExpectation } from '../src/core/qa/expectations';
@@ -63,6 +64,12 @@ export default defineContentScript({
     void send({ type: 'preview.get' }).then(record => { if (record?.origin === location.origin && Date.now() - record.startedAt < 86400000) { state.value = { ...state.value, preview: record }; requestedExperiment.value = { platform: record.platform, id: record.experimentId, requestId: Date.now() }; } }).catch(error => diagnostic('bridge', 'Could not restore preview', error));
     const workspace = signal<Workspace>(emptyWorkspace());
     const workspaceKey = `splitscope:workspace:${location.origin}`;
+    const checkRun = signal<CheckRun | null>(null);
+    let journeyRequest = 0;
+    let workspaceWrites = Promise.resolve();
+    let workspacePending = 0;
+    let expectationWrites = Promise.resolve();
+    let expectationPending = 0;
     const journey = signal<Journey | null>(null);
     const workspaceLoaded = browser.storage.local.get(workspaceKey).then(value => { workspace.value = normalizeWorkspace(value[workspaceKey]); }).catch(error => diagnostic('bridge', 'Could not load workspace', error));
     const expectations = signal<EventExpectation[]>([]);
@@ -70,7 +77,7 @@ export default defineContentScript({
     const expectationsLoaded = browser.storage.local.get(expectationsKey).then(value => { expectations.value = normalizeExpectations(value[expectationsKey]); }).catch(error => diagnostic('bridge', 'Could not load expectations', error));
     const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) { settings.value = normalizeSettings(result?.['splitscope:settings']); command('captureOptions', { analytics: settings.value.analyticsCapture }); } }).catch(error => diagnostic('bridge', 'Could not load settings', error));
     const onSettingsChanged = (changes: Record<string, any>, area: string) => {
-      if (isAlive() && area === 'local') { if (changes[workspaceKey]) workspace.value = normalizeWorkspace(changes[workspaceKey].newValue); if (changes[expectationsKey]) expectations.value = normalizeExpectations(changes[expectationsKey].newValue); }
+      if (isAlive() && area === 'local') { if (changes[workspaceKey] && !workspacePending) workspace.value = normalizeWorkspace(changes[workspaceKey].newValue); if (changes[expectationsKey] && !expectationPending) expectations.value = normalizeExpectations(changes[expectationsKey].newValue); }
       if (isAlive() && area === 'local' && changes['splitscope:settings']) { settings.value = normalizeSettings(changes['splitscope:settings'].newValue); command('captureOptions', { analytics: settings.value.analyticsCapture }); }
     };
     browser.storage.onChanged.addListener(onSettingsChanged);
@@ -102,7 +109,7 @@ export default defineContentScript({
         mode: 'closed',
         isolateEvents: ['keydown', 'keyup', 'keypress'],
         onMount(container) {
-          render(<PanelBoundary><App workspace={workspace} onWorkspace={value => { workspace.value = normalizeWorkspace(value); void browser.storage.local.set({ [workspaceKey]: workspace.value }).catch(error => report('Could not save workspace', error)); }} journey={journey} onJourney={action => { void send({ type: `journey.${action}` }).then(value => { journey.value = value || null; if (action === 'start') command('rescan'); }).catch(error => report('Could not update journey', error)); }} expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); void browser.storage.local.set({ [expectationsKey]: expectations.value }).catch(error => report('Could not save expectations', error)); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href, state.value.preview); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
+          render(<PanelBoundary><App checkRun={checkRun} onCheckRun={value => { checkRun.value = value; }} workspace={workspace} onWorkspace={value => { workspace.value = normalizeWorkspace(value); const snapshot = workspace.value; workspacePending++; workspaceWrites = workspaceWrites.then(() => browser.storage.local.set({ [workspaceKey]: snapshot })).catch(error => report('Could not save workspace', error)).finally(() => { workspacePending--; }); }} journey={journey} onJourney={async action => { const request = ++journeyRequest; try { const value = await send({ type: `journey.${action}` }); if (request === journeyRequest) journey.value = value || null; if (action === 'start') command('rescan'); } catch (error) { report('Could not update journey', error); throw error; } }} expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); const snapshot = expectations.value; expectationPending++; expectationWrites = expectationWrites.then(() => browser.storage.local.set({ [expectationsKey]: snapshot })).catch(error => report('Could not save expectations', error)).finally(() => { expectationPending--; }); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; if (value && checkRun.value && !checkRun.value.endedAt) checkRun.value = { ...checkRun.value, interrupted: true }; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href, state.value.preview); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
           return container;
         },
         onRemove(container) { uiMounted = false; if (container) render(null, container); }
@@ -166,6 +173,7 @@ export default defineContentScript({
             void send({ type: 'page.snapshot', state: { ...summarize(state.value), documentId: instanceId } }).catch(error => report('Could not update detected platforms', error));
           }
         }
+        checkRun.value = recordCheck(checkRun.value, incoming);
         const events = [...state.value.events, incoming].slice(-5000);
         state.value = { ...state.value, events };
         send({ type: 'page.event', event: incoming, count: events.length }).catch(error => report('Could not save event', error));
@@ -200,13 +208,14 @@ export default defineContentScript({
       if (message?.type === 'page.networkEvent' && message.event && !eventsPaused) {
         const incoming = parseEvent(message.event);
         if (!incoming) { report('Rejected event record', 'Unsupported event shape'); return; }
+        checkRun.value = recordCheck(checkRun.value, incoming);
         state.value = { ...state.value, events: [...state.value.events, incoming].slice(-5000) };
         void send({ type: 'page.event', event: incoming }).catch(() => {});
       }
     });
     browser.runtime.onMessage.addListener(onRuntimeMessage);
     cleanup.push(() => browser.runtime.onMessage.removeListener(onRuntimeMessage));
-    const journeyTimer = window.setInterval(() => { if (isAlive() && uiMounted) void send({ type: 'journey.get' }).then(value => { if (isAlive()) journey.value = value || null; }).catch(error => report('Could not load journey', error)); }, 2500);
+    const journeyTimer = window.setInterval(() => { if (isAlive() && uiMounted) { const request = journeyRequest; void send({ type: 'journey.get' }).then(value => { if (isAlive() && request === journeyRequest && JSON.stringify(journey.value) !== JSON.stringify(value || null)) journey.value = value || null; }).catch(error => report('Could not load journey', error)); } }, 2500);
     cleanup.push(() => window.clearInterval(journeyTimer));
     const healthTimer = window.setInterval(() => { isAlive(); }, 1000);
     cleanup.push(() => window.clearInterval(healthTimer));

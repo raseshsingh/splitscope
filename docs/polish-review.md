@@ -11,3 +11,13 @@ Reviewed the user plan, capture/bridge/background flow, adapters, previews, even
 - Toolbar work is deduplicated and errors are handled. Journey observations are batched before serialized storage writes. Sanitization now budgets keys and primitive/container values as well as strings, and avoids evaluating array getters.
 
 Validation: TypeScript and Chrome production build completed. No automated tests or live vendor validation run.
+
+## Phase B — QA workflow polish
+
+- Event checks are collapsed by default so the timeline remains primary. Expectations can be edited. Validation prevents silently clipped rule definitions.
+- Check results accumulate independently of the event buffer and survive section changes and panel remounts in the same document. Clearing the log cannot erase a failed check. Paused capture marks the result incomplete; redacted comparisons have an unavailable state. Check exports sanitize values. Reload still ends a page-session check.
+- Event filters and expanded rows survive navigation between panel sections.
+- Journey replacement now starts a new recording after explicit confirmation; deletion is a distinct action. Controls show pending work and errors. Observation filters and chronological ordering improve navigation, and cross-origin recording gaps are visible. Exports omit the internal comparison cache.
+- Workspace/expectation writes are serialized, and local storage echoes cannot replace text with an older in-flight value while typing. Journey polling cannot overwrite a later user action with an older response. Journey size limits account for encoded size.
+
+Validation: TypeScript and Chrome production build completed. No automated tests or live vendor validation run.

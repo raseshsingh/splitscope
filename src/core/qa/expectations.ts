@@ -1,6 +1,6 @@
 import type { CapturedEvent } from '../model';
 export interface EventExpectation { id: string; name: string; platform: string; eventName: string; required: string[]; equals: Record<string, unknown> }
-export interface CheckResult { id: string; name: string; status: 'waiting' | 'not-observed' | 'passed' | 'failed'; matches: number; failures: Array<{ eventId: string; issues: string[] }> }
+export interface CheckResult { id: string; name: string; status: 'waiting' | 'not-observed' | 'passed' | 'failed' | 'unverifiable'; matches: number; failures: Array<{ eventId: string; issues: string[] }> }
 export function field(value: unknown, path: string): unknown {
   return path.split('.').reduce((item: any, key) => item && typeof item === 'object' && Object.hasOwn(item, key) ? item[key] : undefined, value);
 }
@@ -16,7 +16,7 @@ export function evaluateExpectations(rules: EventExpectation[], events: Captured
       }
       return issues.length ? [{ eventId: event.id, issues }] : [];
     });
-    return { id: rule.id, name: rule.name, status: !matches.length ? end == null ? 'waiting' : 'not-observed' : failures.length ? 'failed' : 'passed', matches: matches.length, failures };
+    return { id: rule.id, name: rule.name, status: !matches.length ? end == null ? 'waiting' : 'not-observed' : failures.length ? failures.every(failure => failure.issues.every(issue => issue.startsWith('Value unavailable:'))) ? 'unverifiable' : 'failed' : 'passed', matches: matches.length, failures };
   });
 }
 function equal(a: unknown, b: unknown): boolean {
@@ -26,5 +26,16 @@ function equal(a: unknown, b: unknown): boolean {
 }
 export function normalizeExpectations(input: unknown): EventExpectation[] {
   if (!Array.isArray(input)) return [];
-  return input.slice(0, 50).filter(item => item && typeof item.id === 'string' && typeof item.eventName === 'string').map(item => ({ id: item.id.slice(0, 100), name: String(item.name || item.eventName).slice(0, 150), platform: String(item.platform || 'all').slice(0, 40), eventName: item.eventName.slice(0, 300), required: Array.isArray(item.required) ? item.required.filter((v: unknown) => typeof v === 'string').slice(0, 50) : [], equals: item.equals && typeof item.equals === 'object' && !Array.isArray(item.equals) ? item.equals : {} }));
+  const seen = new Set<string>();
+  return input.slice(0, 50).flatMap(item => {
+    if (!item || typeof item.id !== 'string' || typeof item.eventName !== 'string' || seen.has(item.id)) return [];
+    seen.add(item.id);
+    const equals: Record<string, unknown> = Object.create(null);
+    if (item.equals && typeof item.equals === 'object' && !Array.isArray(item.equals)) {
+      for (const [key, value] of Object.entries(item.equals).slice(0, 50)) {
+        try { if (JSON.stringify(value)?.length <= 2000) equals[key.slice(0, 200)] = value; } catch {}
+      }
+    }
+    return [{ id: item.id.slice(0, 100), name: String(item.name || item.eventName).slice(0, 150), platform: String(item.platform || 'all').slice(0, 40), eventName: item.eventName.trim().slice(0, 300), required: Array.isArray(item.required) ? [...new Set<string>(item.required.filter((v: unknown) => typeof v === 'string').map((v: string) => v.trim().slice(0, 200)).filter(Boolean))].slice(0, 50) : [], equals }];
+  });
 }
