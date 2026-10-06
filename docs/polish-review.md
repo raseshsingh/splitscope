@@ -32,3 +32,11 @@ Validation: TypeScript and Chrome production build completed. No automated tests
 - The legacy options page reuses the panel settings component. Legacy popup actions respect error replies. Version bumped to 0.1.10.
 
 Validation: TypeScript and Chrome production build completed. No automated tests or live vendor validation run. Visual preview review could not be completed: the local server was initially stopped, and after restarting it the in-app browser's URL policy blocked operations on its generated error page. No updated screenshot captured. The design server remains available at http://127.0.0.1:5178/dev/index.html.
+
+## Journey empty-state correction — 0.1.11
+
+Opening Journey with no saved recording crashed because the shared message listener converted an intentional `null` reply into `{ ok: true }`. The bridge then stored the acknowledgement as if it were a Journey, and the view read its missing `entries.length`. Deleting a recording could produce the same state. This is platform-independent, including on Adobe Target pages.
+
+The message listener now preserves `null`, while continuing to acknowledge handlers that return `undefined`. Journey data is checked at storage, bridge and display boundaries so malformed records or acknowledgements cannot reach recording controls. Invalid saved records are left untouched until an explicit start or delete action.
+
+Validation: TypeScript and Chrome production build; no automated tests or live-site validation run.

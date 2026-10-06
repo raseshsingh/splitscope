@@ -1,10 +1,11 @@
-import type { Journey } from '../../core/qa/journey';
+import { readJourney, type Journey } from '../../core/qa/journey';
 import { downloadFile } from '../../core/qa/export';
 import { pretty } from '../../core/qa/presentation';
 import { Disclosure, JsonTree } from '../shared/components';
 import { useState } from 'preact/hooks';
 type Action = 'start' | 'stop' | 'clear';
 export default function JourneyView({ journey, currentUrl, onAction }: { journey: Journey | null; currentUrl: string; onAction: (action: Action) => void | Promise<void> }) {
+  journey = readJourney(journey);
   const [confirm, setConfirm] = useState<'replace' | 'clear' | null>(null), [limit, setLimit] = useState(30);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [filter, setFilter] = useState('all');

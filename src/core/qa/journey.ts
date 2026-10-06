@@ -1,6 +1,20 @@
 import { sanitize } from '../sanitize';
 export interface JourneyEntry { id: string; t: number; type: 'navigation' | 'decision' | 'event' | 'note'; name: string; url?: string; detail?: unknown }
 export interface Journey { origin: string; startedAt: number; endedAt?: number; recording: boolean; lastUrl: string; lastDocument?: string; decisions: Record<string, string>; entries: JourneyEntry[]; omitted: number }
+/** Storage and extension messages are runtime data, not guaranteed Journey objects. */
+export function readJourney(value: unknown): Journey | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Partial<Journey>;
+  if (typeof item.origin !== 'string' || !Number.isFinite(item.startedAt) ||
+      typeof item.recording !== 'boolean' || typeof item.lastUrl !== 'string' ||
+      !Number.isFinite(item.omitted) || !item.decisions || typeof item.decisions !== 'object' || Array.isArray(item.decisions) ||
+      !Object.values(item.decisions).every(decision => typeof decision === 'string') ||
+      !Array.isArray(item.entries) || !item.entries.every(entry => entry &&
+        typeof entry.id === 'string' && Number.isFinite(entry.t) && typeof entry.name === 'string' &&
+        ['navigation', 'decision', 'event', 'note'].includes(entry.type) &&
+        (entry.url === undefined || typeof entry.url === 'string'))) return null;
+  return item as Journey;
+}
 export function beginJourney(origin: string): Journey { return { origin, startedAt: Date.now(), recording: true, lastUrl: '', decisions: {}, entries: [], omitted: 0 }; }
 const entrySizes = new WeakMap<Journey, number[]>();
 const encoder = new TextEncoder();

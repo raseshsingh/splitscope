@@ -1,4 +1,4 @@
-import { appendJourney, beginJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
+import { appendJourney, beginJourney, readJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import { identifyEndpoint } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
@@ -239,7 +239,7 @@ function updateJourney(tabId: number, update: (journey: Journey) => boolean): Pr
     await new Promise(resolve => setTimeout(resolve, 100));
     if (journeyBatches.get(tabId) === batch) journeyBatches.delete(tabId);
     const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);
-    const journey = saved[key] as Journey | undefined;
+    const journey = readJourney(saved[key]);
     if (!journey) return;
     let changed = false;
     for (const apply of batch.updates) { try { changed = apply(journey) || changed; } catch (error) { diagnostic('background', 'Could not record journey observation', error); } }
@@ -253,7 +253,7 @@ function manageJourney(tabId: number, type: string, url: string) {
   return serialJourneyWrite(tabId, async () => {
     const key = `splitscope:journey:${tabId}`, saved = await browser.storage.session.get(key);
     if (type === 'journey.clear') { await browser.storage.session.remove(key); return null; }
-    let journey = saved[key] as Journey | undefined;
+    let journey = readJourney(saved[key]);
     if (type === 'journey.start') { journey = beginJourney(new URL(url).origin); await browser.storage.session.set({ [key]: journey }); }
     if (type === 'journey.stop' && journey) { journey.recording = false; journey.endedAt = Date.now(); await browser.storage.session.set({ [key]: journey }); }
     return journey || null;
