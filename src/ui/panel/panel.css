@@ -21,6 +21,3 @@
 .ss-dashboard-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
 .ss-dashboard-actions a{text-decoration:none}
 .ss-detail>.ss-dashboard-actions{padding:10px 0}
-.ss-dashboard-dialog .ss-label{margin-top:14px}
-.ss-dashboard-dialog select{display:block;width:100%;margin-top:7px}
-.ss-dashboard-dialog textarea{font-size:.9em;font-weight:400}
