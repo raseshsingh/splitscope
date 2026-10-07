@@ -7,6 +7,7 @@ import { normalizedExperiment, variationChanges } from '../src/core/hooks/runtim
 import { activityDetails } from '../src/core/qa/activity-details';
 import { queueKameleoonPreview } from '../src/core/hooks/kameleoon-preview';
 import { parseSnapshot } from '../src/core/bridge/protocol';
+Object.assign(globalThis, { location: { href: 'https://example.test/' } });
 const tokens = { 'activity.id': 831395, 'activity.name': 'Homepage selector', 'activity.type': 'xt', 'experience.id': 2, 'experience.name': 'Experience C' };
 test('Adobe endpoint detection excludes Analytics, AEP and lookalike URLs', () => {
   assert.equal(isTargetEndpoint('https://client.tt.omtrdc.net/rest/v1/delivery?client=x'), true);

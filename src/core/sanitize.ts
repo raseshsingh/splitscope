@@ -1,3 +1,4 @@
+import { functionSource } from './function-source';
 const SECRET_KEY = /password|authorization|cookie|token|secret|email|phone|mobile|external.?id/i;
 const SECRET_QUERY = /([?&](?:access_token|auth|authorization|code|email|id_token|password|refresh_token|secret|session|token)=)[^&#\s]*/gi;
 const MAX_DEPTH = 14;
@@ -14,12 +15,13 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
     if (input === null || input === undefined || typeof input === 'boolean' || typeof input === 'number') return input;
     if (typeof input === 'bigint') return `${input}n`;
     if (typeof input === 'string') {
-      const text = input.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email]').replace(SECRET_QUERY, '$1[redacted]');
+      // Bound email matching so a long minified identifier cannot cause quadratic scanning.
+      const text = (input.includes('@') ? input.replace(/[\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,63}/g, '[email]') : input).replace(SECRET_QUERY, '$1[redacted]');
       const clipped = text.length > MAX_STRING ? `${text.slice(0, MAX_STRING)}…[truncated]` : text;
       budget -= clipped.length;
       return budget < 0 ? '[payload truncated]' : clipped;
     }
-    if (typeof input === 'function') return `[Function${input.name ? ` ${input.name}` : ''}]`;
+    if (typeof input === 'function') return visit(functionSource(input), depth, key);
     if (typeof Node !== 'undefined' && input instanceof Node) {
       if (input instanceof Element) {
         const id = input.id ? `#${input.id}` : '';

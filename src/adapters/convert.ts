@@ -24,7 +24,7 @@ export const convertAdapter: PageAdapter = {
         platform: 'convert', id: String(value?.id ?? id), name: value?.name || value?.key || `Experience ${id}`,
         kind: activityKind('convert', value), status: current?.[id] ? 'running-in' : assigned ? 'bucketed-elsewhere' : 'unknown',
         variations, assignedVariationId: assigned?.id == null ? undefined : String(assigned.id), trafficAllocation: value?.traffic_allocation,
-        source: ['runtime-api', 'snippet-data'], raw: sanitize(value)
+        source: ['runtime-api', 'snippet-data'], raw: value
       });
     });
   },

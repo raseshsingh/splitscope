@@ -1,3 +1,4 @@
+import { mergeChanges } from '../core/changes';
 import type { NormalizedExperiment, NormalizedVariation } from '../core/model';
 import type { PageAdapter } from '../core/hooks/runtime';
 import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
@@ -152,8 +153,14 @@ export const optimizelyAdapter: PageAdapter = {
       const pageRecords = pageIds.map((pageId) => pages[pageId]).filter(Boolean);
       const urls = [...new Set(pageRecords.flatMap((page: AnyRecord) => collectUrlConditions(page.staticConditions)))];
       const weights = variationWeights(raw);
-      const variationSource = raw.variations ?? (raw.variation_ids || raw.variationIds || []).map((vid: string | number) => ({ ...data.variations?.[vid], id: vid }));
-      const variations = variationList(variationSource, { weights });
+      const variationSource = raw.variations ?? (raw.variation_ids || raw.variationIds || []);
+      const variationEntries = Array.isArray(variationSource) ? variationSource.map((value: any, index: number) => [String(index), value]) : Object.entries(variationSource || {});
+      const variations = variationList(variationEntries.map(([key, value]: any) => {
+        const reference = value != null && typeof value === 'object' ? value : { id: value ?? key };
+        const variationId = String(reference.id ?? key);
+        const definition = data.variations?.[variationId];
+        return { ...definition, ...reference, id: variationId, changes: mergeChanges(variationChanges(definition), variationChanges(reference)) };
+      }), { weights, changes: item => item.changes });
       const selected = variations.find((variation) => variation.id === String(assignment?.id));
       const isActiveHere = activeResult !== null ? activeIds.has(id) : experimentState.isActive === true || campaignState?.isActive === true;
       const inHoldback = state.isGlobalHoldback === true || experimentState.isInExperimentHoldback === true || campaignState?.isInCampaignHoldback === true;
@@ -170,18 +177,7 @@ export const optimizelyAdapter: PageAdapter = {
       const audienceIds = strings(raw.audienceIds);
       const audienceNames = asArray(raw.audienceName).map((item: any) => String(item?.name ?? item)).filter(Boolean);
       const audiences = [...new Set([...audienceNames, ...audienceIds])].map((name) => ({ name }));
-      const variationsWithChanges: NormalizedVariation[] = variations.map((variation) => ({
-        ...variation,
-        changes: variation.changes || (() => {
-          const source = asArray(raw.variations).find((item: any) => String(item?.id) === variation.id);
-          const actions = asArray(source?.actions).map((action: any) => ({
-            type: 'unknown' as const,
-            label: pages[action?.pageId ?? action?.viewId]?.name || 'Page change',
-            data: sanitize(action?.changes ?? action)
-          }));
-          return actions.length ? actions : undefined;
-        })()
-      }));
+
 
       return normalizedExperiment({
         platform: 'optimizely', id,
@@ -190,7 +186,7 @@ export const optimizelyAdapter: PageAdapter = {
         kind,
         status,
         statusReason,
-        variations: variationsWithChanges,
+        variations,
         assignedVariationId: assignment?.id == null ? undefined : String(assignment.id),
         trafficAllocation: typeof (raw.trafficAllocation ?? raw.percentageIncluded) === 'number' ? raw.trafficAllocation ?? raw.percentageIncluded : undefined,
         changes: [...(variationChanges(raw) || []), ...(variationChanges(campaign) || [])],

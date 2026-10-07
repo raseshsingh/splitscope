@@ -26,6 +26,8 @@ export interface DetectionResult {
 
 export interface NamedRef { id?: string; name: string }
 export interface NormalizedChange {
+  sourcePath?: string;
+  codeUnavailable?: string;
   type: 'js' | 'css' | 'html' | 'attribute' | 'redirect' | 'offer' | 'unknown';
   code?: string;
   selector?: string;

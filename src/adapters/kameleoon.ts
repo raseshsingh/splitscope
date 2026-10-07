@@ -39,7 +39,7 @@ export const kameleoonAdapter: PageAdapter = {
         platform: 'kameleoon', id: String(value.id ?? value.experimentId ?? value.key ?? ''), name: value.name || `Experiment ${value.id}`,
         kind, status: active ? 'running-in' : assignedId != null ? 'bucketed-elsewhere' : 'unknown', variations, assignedVariationId: assignedId != null ? String(assignedId) : undefined,
         trafficAllocation: typeof value.trafficAllocation === 'number' ? value.trafficAllocation : undefined, targeting: { urls: asArray(value.targeting?.urls).map(String) },
-        source: variations.some(v => v.changes?.length) ? ['runtime-api', 'snippet-data'] : ['runtime-api'], raw: sanitize(value)
+        source: variations.some(v => v.changes?.length) ? ['runtime-api', 'snippet-data'] : ['runtime-api'], raw: value
       });
     }).filter((experiment) => experiment.id);
   },

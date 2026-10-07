@@ -1,3 +1,5 @@
+import { variationChanges } from '../changes';
+export { variationChanges } from '../changes';
 import { sanitize } from '../sanitize';
 import type { CapturedEvent, DataSource, DetectionResult, NormalizedChange, NormalizedExperiment, NormalizedVariation, PlatformId } from '../model';
 
@@ -53,27 +55,6 @@ export function variationList(raw: any, options: { names?: any; weights?: any; c
     const changes = options.changes?.(variation) || variationChanges(variation);
     return { id, name, isControl: Boolean(variation?.isControl || variation?.control), weight, changes, raw: sanitize(variation) };
   });
-}
-
-export function variationChanges(raw: any, depth = 0): NormalizedChange[] | undefined {
-  if (depth > 8) return undefined;
-  const changes: NormalizedChange[] = [];
-  const code = raw?.code || raw?.js || raw?.javascript || raw?.customCode || raw?.customJs || raw?.jsCode || raw?.javaScriptCode?.code;
-  const css = raw?.css;
-  if (typeof code === 'string' && code) changes.push({ type: 'js', code });
-  if (typeof css === 'string' && css) changes.push({ type: 'css', code: css });
-  const actions = raw?.actions || raw?.changes || raw?.options;
-  for (const action of asArray(actions)) {
-    if (!isObject(action)) continue;
-    if (action.changes) { changes.push(...(variationChanges(action, depth + 1) || [])); continue; }
-    const type = String(action.type || action.action || '').toLowerCase();
-    if (type.includes('css')) changes.push({ type: 'css', code: String(action.code ?? action.css ?? action.value ?? ''), selector: action.selector });
-    else if (type.includes('js') || type.includes('javascript')) changes.push({ type: 'js', code: String(action.code ?? action.value ?? '') });
-    else if (type.includes('html')) changes.push({ type: 'html', code: String(action.code ?? action.html ?? action.content ?? action.value ?? ''), selector: action.selector });
-    else if (type.includes('redirect')) changes.push({ type: 'redirect', url: String(action.url ?? action.value ?? '') });
-    else changes.push({ type: 'unknown', label: type || 'Change', selector: action.selector, data: sanitize(action) });
-  }
-  return changes.length ? changes : undefined;
 }
 
 export function normalizedExperiment(input: Partial<NormalizedExperiment> & Pick<NormalizedExperiment, 'platform' | 'id'>): NormalizedExperiment {

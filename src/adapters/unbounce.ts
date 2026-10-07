@@ -16,7 +16,7 @@ export const unbounceAdapter: PageAdapter = {
     if (!page?.id && !page?.variantId) return [];
     const id = String(page.id || location.pathname);
     const variationId = String(page.variantId || page.variant || 'a');
-    return [normalizedExperiment({ platform: 'unbounce', id, campaignId: id, name: page.name || `Landing page ${id}`, kind: 'split-url', status: 'running-in', variations: [{ id: variationId, name: `Variant ${variationId.toUpperCase()}` }], assignedVariationId: variationId, source: ['runtime-api'], raw: sanitize(page) })];
+    return [normalizedExperiment({ platform: 'unbounce', id, campaignId: id, name: page.name || `Landing page ${id}`, kind: 'split-url', status: 'running-in', variations: [{ id: variationId, name: `Variant ${variationId.toUpperCase()}` }], assignedVariationId: variationId, source: ['runtime-api'], raw: page })];
   },
   install(helpers) {
     helpers.wrapMethod(() => (window as any).ub, 'track', 'unbounce', (args) => String((args[0] as any)?.name || args[0] || 'Unbounce track'), 'goal');

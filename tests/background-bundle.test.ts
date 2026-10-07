@@ -17,7 +17,7 @@ function worker(optionalFailure = false) {
     webRequest: optionalFailure ? undefined : { onBeforeRequest: event('network') }
   };
   // Deliberately omit OffscreenCanvas, DOM and ImageData: startup must not require them.
-  runInNewContext(script, { chrome, URL, console, setTimeout, clearTimeout });
+  runInNewContext(script, { chrome, URL, console, TextEncoder, setTimeout, clearTimeout });
   return { listeners, messages, send: (message: any) => new Promise<any>(resolve => listeners.message(message, { tab: { id: 7 } }, resolve)) };
 }
 for (const optionalFailure of [false, true]) {

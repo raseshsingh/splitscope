@@ -19,7 +19,7 @@ export const dynamicYieldAdapter: PageAdapter = {
     return rawList.map((raw, index) => {
       const experimentId = raw?.campaignId ?? raw?.id ?? raw?.experienceId ?? index;
       const variant = raw?.variation || raw?.variationObject || raw;
-      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: typeof dyo?.getRenderedObjectsOnPage === 'function' ? 'running-in' : 'unknown', variations: variationList(raw?.variations || [variant]), assignedVariationId: String(variant?.variationId ?? variant?.id ?? ''), source: ['runtime-api'], raw: sanitize(raw) });
+      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: typeof dyo?.getRenderedObjectsOnPage === 'function' ? 'running-in' : 'unknown', variations: variationList(raw?.variations || [variant]), assignedVariationId: String(variant?.variationId ?? variant?.id ?? ''), source: ['runtime-api'], raw: raw });
     });
   },
   install(helpers) {

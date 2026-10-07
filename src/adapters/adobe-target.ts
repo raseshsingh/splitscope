@@ -1,3 +1,4 @@
+import { mergeChanges } from '../core/changes';
 import { activityKind } from '../core/activity-kind';
 import type { NormalizedExperiment } from '../core/model';
 import type { PageAdapter } from '../core/hooks/runtime';
@@ -10,16 +11,17 @@ type Evidence = 'cached' | 'delivered' | 'rendered' | 'failed';
 export function readTargetActivities(payload: unknown, evidence: Evidence = 'cached') {
   const found = new Map<string, NormalizedExperiment>();
   const seen = new WeakSet<object>();
-  const visit = (value: any, depth = 0, parent?: any, prefetched = false) => {
+  const visit = (value: any, depth = 0, parent?: any, prefetched = false, offer?: any) => {
     if (!value || typeof value !== 'object' || seen.has(value) || depth > 16) return;
     seen.add(value);
+    // Keep an offer/item beside its response metadata, without collecting sibling activities.
+    const offerContext = (value.type && value.content != null) || (value.schema && value.data) ? value : offer;
     const tokens = value.responseTokens && !Array.isArray(value.responseTokens) ? value.responseTokens : value.tokens || value;
     const id = tokens['activity.id'] ?? value.activityId ?? value.activity?.id;
     if (id != null) {
       const variationId = tokens['experience.id'] ?? value.experienceId;
       const active = evidence === 'rendered' || (evidence === 'delivered' && !prefetched);
-      const offerChanges = (offer: any) => variationChanges(offer) || (offer?.type && offer?.content != null ? variationChanges({ options: [offer] }) : undefined);
-      const changes = offerChanges(value) || offerChanges(parent);
+      const changes = mergeChanges(variationChanges(value), variationChanges(offerContext), !offerContext ? variationChanges(parent) : undefined);
       const activity = normalizedExperiment({
         platform: 'adobe-target', id: String(id),
         name: String(tokens['activity.name'] || value.activity?.name || `Activity ${id}`),
@@ -33,9 +35,14 @@ export function readTargetActivities(payload: unknown, evidence: Evidence = 'cac
         source: ['tokens'], raw: sanitize({ evidence, response: value, offer: parent }, 400_000, 14)
       });
       const previous = found.get(activity.id);
-      if (!previous || previous.status !== 'running-in' || activity.status === 'running-in') found.set(activity.id, activity);
+      if (previous) {
+        const preferred = previous.status === 'running-in' && activity.status !== 'running-in' ? previous : activity;
+        const variations = new Map(previous.variations.map(item => [item.id, item]));
+        for (const item of activity.variations) variations.set(item.id, { ...variations.get(item.id), ...item, changes: mergeChanges(variations.get(item.id)?.changes, item.changes) });
+        found.set(activity.id, { ...preferred, changes: mergeChanges(previous.changes, activity.changes), variations: [...variations.values()] });
+      } else found.set(activity.id, activity);
     }
-    for (const [key, child] of Object.entries(value).slice(0, 500)) visit(child, depth + 1, Array.isArray(value) ? parent : value, prefetched || key === 'prefetch');
+    for (const [key, child] of Object.entries(value).slice(0, 500)) visit(child, depth + 1, Array.isArray(value) ? parent : value, prefetched || key === 'prefetch', offerContext);
   };
   visit(payload); return [...found.values()];
 }
@@ -67,8 +74,8 @@ export const adobeTargetAdapter: PageAdapter = {
           status: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.status : activity.status,
           evidence: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.evidence : activity.evidence,
           statusReason: evidence === 'delivered' && prior.evidence?.state === 'applied' && prior.assignedVariationId === activity.assignedVariationId ? prior.statusReason : activity.statusReason,
-          variations: activity.variations.length ? activity.variations.map(v => ({ ...prior.variations.find(p => p.id === v.id), ...v, changes: v.changes || prior.variations.find(p => p.id === v.id)?.changes })) : prior.variations,
-          changes: activity.changes || prior.changes,
+          variations: activity.variations.length ? activity.variations.map(v => ({ ...prior.variations.find(p => p.id === v.id), ...v, changes: mergeChanges(prior.variations.find(p => p.id === v.id)?.changes, v.changes) })) : prior.variations,
+          changes: mergeChanges(prior.changes, activity.changes),
           raw: { latest: activity.raw, previousDecision: prior.raw && (prior.raw as any).latest || prior.raw }
         } : activity;
         latest.set(activity.id, merged); helpers.addExperiment(merged);

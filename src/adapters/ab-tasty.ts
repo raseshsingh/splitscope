@@ -1,6 +1,6 @@
 import { activityKind } from '../core/activity-kind';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList } from '../core/hooks/runtime';
+import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 export const abTastyAdapter: PageAdapter = {
@@ -30,7 +30,7 @@ export const abTastyAdapter: PageAdapter = {
         statusReason: raw.reason || raw.rejectionReason || raw.statusReason,
         variations, assignedVariationId: assigned == null ? undefined : String(assigned),
         trafficAllocation: raw.trafficAllocation ?? raw.traffic,
-        source: ['runtime-api'], raw: { test: sanitize(raw), result: sanitize((results as any)[id]), assignment: assigned }
+        changes: variationChanges(raw), source: ['runtime-api'], raw: { test: sanitize(raw), result: sanitize((results as any)[id]), assignment: assigned }
       });
     });
   },

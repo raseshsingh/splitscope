@@ -1,6 +1,6 @@
 import { activityKind } from '../core/activity-kind';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList } from '../core/hooks/runtime';
+import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 export const vwoAdapter: PageAdapter = {
@@ -24,7 +24,7 @@ export const vwoAdapter: PageAdapter = {
       const variants = variationList(combs, { names, changes: (variant) => {
         const payload = variant?.sections?.[0]?.variations || variant?.changes;
         const parsed = typeof payload === 'string' ? (() => { try { return JSON.parse(payload); } catch { return payload; } })() : payload;
-        return parsed ? [{ type: 'unknown', label: 'VWO variation changes', data: sanitize(parsed) }] : undefined;
+        return variationChanges(parsed) || (parsed ? [{ type: 'unknown', label: 'VWO variation changes', data: sanitize(parsed) }] : undefined);
       } });
       const selectedVariation = variants.find((item) => item.id === String(selected));
       const controlId = String(value.control_variation_id ?? 0);
