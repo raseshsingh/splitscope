@@ -19,3 +19,7 @@ Sources (checked October 7, 2026):
 - https://experienceleague.adobe.com/en/docs/target-dev/developer/client-side/functions-overview/adobe-target-sendnotifications-atjs-21
 - https://experienceleague.adobe.com/en/docs/target/using/activities/activity-qa/activity-qa
 - https://experienceleague.adobe.com/en/docs/target-dev/developer/client-side/aep/web-sdk-atjs-comparison
+
+## Phase 2 — findings
+
+Added evidence-indexed delivery, mixed-stack, edge, property, legacy, selector, JSON, redirect and response-metadata findings. Findings describe observations rather than claiming attribution. Session history follows the existing retained-event setting; clearing events clears these derived findings. Missing parent-level tokens are explicitly called out as an alternative to disabled token settings.

@@ -18,3 +18,12 @@ test('Wire normalization separates TGT from AJO and retains prefetch location ev
  assert.equal(readTargetActivities({scopeDetails:{decisionProvider:'AJO'},responseTokens:{'activity.id':'123'}}).length,0);
  assert.equal(readTargetActivities({responseTokens:{'campaign.id':'123','experience.id':'1'}},'delivered')[0].id,'123');
 });
+import {targetFindings} from '../src/core/adobe-target/findings';
+test('Target findings distinguish HTTP failure and unknown network failure from proven blocking',()=>{
+ const base={url:'https://target.example.com/rest/v1/delivery?client=foo',page:'https://example.com',at:1,duration:20,status:200};
+ assert.ok(!targetFindings([normalizeWire(base)!]).some(f=>f.id==='T01'));
+ const failed=normalizeWire({...base,status:0})!;
+ assert.ok(targetFindings([failed]).some(f=>f.id==='T01'));
+ assert.ok(!targetFindings([failed]).some(f=>f.id==='T05'));
+ assert.ok(targetFindings([{...failed,error:'ERR_BLOCKED_BY_CLIENT'}]).some(f=>f.id==='T05'));
+});
