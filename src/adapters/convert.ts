@@ -1,4 +1,5 @@
 import { activityKind } from '../core/activity-kind';
+import { convertDashboardContext } from '../core/dashboard-links';
 import type { PageAdapter } from '../core/hooks/runtime';
 import { asArray, detection, normalizedExperiment, variationList } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
@@ -13,6 +14,7 @@ export const convertAdapter: PageAdapter = {
   },
   listExperiments() {
     const convert = (window as any).convert;
+    const dashboardContext = convertDashboardContext(Array.from(document.scripts || [], script => script.src));
     const current = convert?.currentData?.experiences || convert?.currentData?.experiments;
     const data = convert?.data?.experiences || convert?.data?.experiments;
     const historical = convert?.historicalData?.experiences || {};
@@ -24,7 +26,7 @@ export const convertAdapter: PageAdapter = {
         platform: 'convert', id: String(value?.id ?? id), name: value?.name || value?.key || `Experience ${id}`,
         kind: activityKind('convert', value), status: current?.[id] ? 'running-in' : assigned ? 'bucketed-elsewhere' : 'unknown',
         variations, assignedVariationId: assigned?.id == null ? undefined : String(assigned.id), trafficAllocation: value?.traffic_allocation,
-        source: ['runtime-api', 'snippet-data'], raw: value
+        dashboardContext, source: ['runtime-api', 'snippet-data'], raw: value
       });
     });
   },

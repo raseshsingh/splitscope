@@ -61,6 +61,7 @@ export interface NormalizedExperiment {
   targeting?: { urls?: string[]; audiences?: NamedRef[]; conditions?: string[] };
   goals?: NamedRef[];
   campaignId?: string;
+  dashboardContext?: { projectId?: string; accountId?: string; runtime?: 'web' | 'classic' };
   source: DataSource[];
   raw: unknown;
   forced?: boolean;

@@ -181,7 +181,8 @@ export const optimizelyAdapter: PageAdapter = {
 
       return normalizedExperiment({
         platform: 'optimizely', id,
-        campaignId: campaignId || (raw.campaignId == null ? undefined : String(raw.campaignId)),
+        campaignId: campaignId || ((raw.campaignId ?? raw.layerId) == null ? undefined : String(raw.campaignId ?? raw.layerId)),
+        dashboardContext: { projectId: data.projectId == null ? undefined : String(data.projectId), runtime: typeof opt.get === 'function' ? 'web' : 'classic' },
         name: raw.name || experimentState.experimentName || campaignState?.experiment?.name || (kind === 'personalization' ? campaign?.name : undefined) || `Experiment ${id}`,
         kind,
         status,

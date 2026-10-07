@@ -74,6 +74,7 @@ export function normalizedExperiment(input: Partial<NormalizedExperiment> & Pick
     targeting: input.targeting,
     goals: input.goals,
     campaignId: input.campaignId,
+    dashboardContext: input.dashboardContext,
     source: input.source || ['runtime-api' as DataSource],
     raw: sanitize(input.raw ?? {})
   };
