@@ -15,6 +15,9 @@ export function eventsCsv(events: CapturedEvent[]): string {
 }
 export function downloadFile(filename: string, text: string, type = 'application/json') {
   const url = URL.createObjectURL(new Blob([text], { type }));
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click();
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename;
+  // An attached anchor also works in browsers that ignore clicks on detached links.
+  anchor.hidden = true; (document.body || document.documentElement).append(anchor);
+  try { anchor.click(); } finally { anchor.remove(); }
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

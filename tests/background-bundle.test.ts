@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { webcrypto } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -7,7 +8,8 @@ const manifest = JSON.parse(readFileSync('.output/chrome-mv3/manifest.json', 'ut
 function worker(optionalFailure = false) {
   const listeners: Record<string, any> = {}; const messages: any[] = [];
   const event = (name: string) => ({ addListener(fn: any) { listeners[name] = fn; } });
-  const area = { get: async () => ({ 'splitscope:settings': { keepLog: false } }), set: async () => {}, remove: async () => {} };
+  const saved: Record<string, any> = { 'splitscope:settings': { keepLog: false } };
+  const area = { get: async () => structuredClone(saved), set: async (value: any) => { Object.assign(saved, structuredClone(value)); }, remove: async (key: string | string[]) => { for (const k of Array.isArray(key) ? key : [key]) delete saved[k]; } };
   const chrome = {
     runtime: { id: 'test', onMessage: event('message') },
     storage: { local: area, session: area },
@@ -17,8 +19,8 @@ function worker(optionalFailure = false) {
     webRequest: optionalFailure ? undefined : { onBeforeRequest: event('network') }
   };
   // Deliberately omit OffscreenCanvas, DOM and ImageData: startup must not require them.
-  runInNewContext(script, { chrome, URL, console, TextEncoder, setTimeout, clearTimeout });
-  return { listeners, messages, send: (message: any) => new Promise<any>(resolve => listeners.message(message, { tab: { id: 7 } }, resolve)) };
+  runInNewContext(script, { chrome, URL, crypto: webcrypto, console, TextEncoder, setTimeout, clearTimeout });
+  return { listeners, messages, send: (message: any) => new Promise<any>(resolve => listeners.message(message, { tab: { id: 7, url: 'https://example.test/' }, url: 'https://example.test/' }, resolve)) };
 }
 for (const optionalFailure of [false, true]) {
   test(`Built worker registers and serves messages with optional failures=${optionalFailure}`, async () => {
@@ -32,4 +34,17 @@ for (const optionalFailure of [false, true]) {
 }
 test('Built manifest includes packaged toolbar images', () => {
   assert.equal(readFileSync('.output/chrome-mv3/' + manifest.action.default_icon).subarray(1, 4).toString(), 'PNG');
+});
+
+test('Compiled worker preserves absent Journey replies and stores start/stop/clear lifecycle', async () => {
+  const w = worker();
+  assert.equal(await w.send({ type: 'journey.get' }), null);
+  const recording = await w.send({ type: 'journey.start' });
+  assert.equal(recording.recording, true); assert.equal(recording.entries.length, 0);
+  await w.send({ type: 'page.snapshot', state: { url: 'https://example.test/shop', documentId: '1', platforms: [], experiments: [] } });
+  const loaded = await w.send({ type: 'journey.get' });
+  assert.equal(loaded.entries[0].type, 'navigation');
+  assert.equal((await w.send({ type: 'journey.stop' })).recording, false);
+  assert.equal(await w.send({ type: 'journey.clear' }), null);
+  assert.equal(await w.send({ type: 'journey.get' }), null);
 });

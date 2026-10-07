@@ -1,3 +1,5 @@
+import { variationChanges } from '../src/core/changes';
+import { readTargetActivities } from '../src/adapters/adobe-target';
 import { emptyWorkspace } from '../src/core/qa/workspace';
 import { beginJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import type { EventExpectation } from '../src/core/qa/expectations';
@@ -9,9 +11,11 @@ import { emptyPageState } from '../src/core/state';
 import { defaultSettings } from '../src/core/settings';
 import '../src/ui/panel/panel.css';
 const state = signal({ ...emptyPageState('https://example.com/shop'), page: { title: 'Example shop — design fixture', referrer: '', readyState: 'complete' }, platforms: [{ id: 'optimizely', displayName: 'Optimizely', result: { state: 'active', confidence: 1, signals: ['window.optimizely.get'] }, capabilities: { listAll: 'full', listActive: true, forceVariation: 'none', trafficSplit: 'partial', changes: 'partial', events: true, notes: {} } }], experiments: [
-{ platform: 'optimizely', id: '10248', name: 'Product page • clearer delivery promise', kind: 'ab', status: 'running-in', variations: [{ id: '201', name: 'Original', weight: 50 }, { id: '202', name: 'Delivery beside price', weight: 50, changes: [{ type: 'html', selector: '.delivery', code: '<span>Free delivery on orders over $50</span>' }] }], assignedVariationId: '202', source: ['runtime-api'], raw: { id: '10248' } },
+{ platform: 'optimizely', id: '10248', name: 'Product page • clearer delivery promise', kind: 'ab', status: 'running-in', variations: [{ id: '201', name: 'Original', weight: 50 }, { id: '202', name: 'Delivery beside price', weight: 50, changes: variationChanges({ customJs: function deliveryPromise() { const delivery = document.querySelector('.delivery'); if (delivery) delivery.textContent = 'Free delivery on orders over $50'; }, css: '.delivery { color: #08764f; font-weight: 600; }', changes: [{ type: 'html', selector: '.delivery', content: '<span>Free delivery on orders over $50</span>' }] }) }], assignedVariationId: '202', targeting: { urls: ['/shop'], audiences: [{ name: 'All visitors' }] }, source: ['runtime-api'], raw: { id: '10248' } },
 { platform: 'optimizely', id: '10261', name: 'Welcome offer for returning visitors', kind: 'personalization', status: 'bucketed-elsewhere', variations: [{ id: '301', name: 'Welcome back' }], assignedVariationId: '301', source: ['snippet-data'], raw: {} }
 ], events: [{ id: 'one', t: Date.now(), platform: 'optimizely', name: 'add_to_cart', category: 'custom', via: 'api-call', properties: { product: { id: 'SKU-108', name: 'Everyday tote' }, quantity: 1, revenue: 4900 }, pageUrl: 'https://example.com/shop' }, { id: 'two', t: Date.now() - 1000, platform: 'page', name: 'Route /shop', category: 'pageview', via: 'listener', properties: { path: '/shop' } }] } as any);
+const targetActivities = readTargetActivities({ execute: { pageLoad: { options: [{ type: 'html', content: '<script>\n  window.targetExample = "Experience C";\n</script>\n<div class="target-offer">Welcome back</div>', responseTokens: { 'activity.id': '831395', 'activity.name': 'Homepage welcome offer', 'activity.type': 'xt', 'experience.id': '2', 'experience.name': 'Experience C' } }] } } }, 'delivered');
+state.value = { ...state.value, experiments: [...state.value.experiments, ...targetActivities], platforms: [...state.value.platforms, { id: 'adobe-target', displayName: 'Adobe Target', result: { state: 'active', confidence: 1, signals: ['Sample Target offer'] }, capabilities: { listAll: 'partial', forceVariation: 'none', events: true, changes: 'partial', notes: {} } }] };
 const settings = signal(defaultSettings);
 const workspace = signal(emptyWorkspace());
 const expectations = signal<EventExpectation[]>([]);

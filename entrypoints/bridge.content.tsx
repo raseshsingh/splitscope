@@ -202,7 +202,7 @@ export default defineContentScript({
       if (!isAlive()) throw new Error('Inspector connection expired.');
       if (message.type === 'bridge.ping') return { protocol: BRIDGE_PROTOCOL, build: EXTENSION_BUILD, instanceId };
       if (message?.type === 'panel.toggle') { if (uiMounted) closeUi(); else await ensureUi(); return { ok: true, mounted: uiMounted, instanceId }; }
-      if (message?.type === 'panel.open') { requestedExperiment.value = null; requestedTab.value = { tab: message.tab === 'settings' ? 'settings' : message.tab === 'events' ? 'events' : 'activities', requestId: Date.now() }; await ensureUi(); return { ok: true, mounted: uiMounted, instanceId }; }
+      if (message?.type === 'panel.open') { requestedExperiment.value = null; requestedTab.value = { tab: (['activities', 'events', 'page', 'tools', 'settings'] as string[]).includes(message.tab) ? message.tab as PanelTab : 'activities', requestId: Date.now() }; await ensureUi(); return { ok: true, mounted: uiMounted, instanceId }; }
       if (message?.type === 'panel.openExperiment') {
         requestedTab.value = { tab: 'activities', requestId: Date.now() };
         requestedExperiment.value = { platform: String(message.platform), id: String(message.id), requestId: Date.now() };
