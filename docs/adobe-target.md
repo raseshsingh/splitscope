@@ -23,3 +23,7 @@ Sources (checked October 7, 2026):
 ## Phase 2 — findings
 
 Added evidence-indexed delivery, mixed-stack, edge, property, legacy, selector, JSON, redirect and response-metadata findings. Findings describe observations rather than claiming attribution. Session history follows the existing retained-event setting; clearing events clears these derived findings. Missing parent-level tokens are explicitly called out as an alternative to disabled token settings.
+
+## Phase 3 — identity and correlation
+
+Added identity inspection, same-page ±30-second A4T matching, and a tracking credential ledger. Credentials are SHA-256 fingerprinted before storage; raw sensitive fields remain redacted. Missing-notification warnings are deliberately not inferred from execute requests. A4T waits 30 seconds before reporting an unmatched capture and cannot establish backend reporting success.

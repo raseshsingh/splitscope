@@ -27,3 +27,13 @@ test('Target findings distinguish HTTP failure and unknown network failure from 
  assert.ok(!targetFindings([failed]).some(f=>f.id==='T05'));
  assert.ok(targetFindings([{...failed,error:'ERR_BLOCKED_BY_CLIENT'}]).some(f=>f.id==='T05'));
 });
+import {enrichIntegrity,a4tMatrix,integrityFindings} from '../src/core/adobe-target/integrity';
+test('A4T correlates SDID on same page within 30 seconds and does not infer missing execute tracking',async()=>{
+ const r=normalizeWire({url:'https://target.example.com/rest/v1/delivery?client=foo',page:'https://example.com',at:100,duration:20,status:200,request:{experienceCloud:{analytics:{logging:'client_side',supplementalDataId:'s1'}},id:{marketingCloudVisitorId:'123'}},response:{execute:{pageLoad:{options:[{eventToken:'private'}]}}}})!;
+ const a=normalizeWire({url:'https://aa.example.com/b/ss/suite?sdid=s1&mid=123',page:r.page,at:200,duration:1,status:200})!;
+ const records=[{...r,integrity:await enrichIntegrity(r)},{...a,integrity:await enrichIntegrity(a)}];
+ assert.equal(a4tMatrix(records,40000)[0].state,'Matched');assert.equal(a4tMatrix(records,40000)[0].ecid,'Matched');
+ assert.equal(records[0].integrity.served[0].ref.length,64);assert.ok(!JSON.stringify(records[0].integrity).includes('private'));
+ assert.ok(!integrityFindings(records,40000).some(f=>f.id==='T30'||f.id==='T40'));
+ assert.ok(integrityFindings([records[0],{...records[1],integrity:{...records[1].integrity,sdid:'other'}}],40000).some(f=>f.id==='T40'));
+});
