@@ -1,3 +1,4 @@
+import { installTargetCapture } from '../core/adobe-target/capture';
 import { mergeChanges } from '../core/changes';
 import { activityKind } from '../core/activity-kind';
 import type { NormalizedExperiment } from '../core/model';
@@ -17,14 +18,15 @@ export function readTargetActivities(payload: unknown, evidence: Evidence = 'cac
     // Keep an offer/item beside its response metadata, without collecting sibling activities.
     const offerContext = (value.type && value.content != null) || (value.schema && value.data) ? value : offer;
     const tokens = value.responseTokens && !Array.isArray(value.responseTokens) ? value.responseTokens : value.tokens || value;
-    const id = tokens['activity.id'] ?? value.activityId ?? value.activity?.id;
+    if (value.scopeDetails?.decisionProvider && value.scopeDetails.decisionProvider !== 'TGT') return;
+    const id = tokens['activity.id'] ?? tokens['campaign.id'] ?? value.activityId ?? value.activity?.id;
     if (id != null) {
       const variationId = tokens['experience.id'] ?? value.experienceId;
       const active = evidence === 'rendered' || (evidence === 'delivered' && !prefetched);
       const changes = mergeChanges(variationChanges(value), variationChanges(offerContext), !offerContext ? variationChanges(parent) : undefined);
       const activity = normalizedExperiment({
         platform: 'adobe-target', id: String(id),
-        name: String(tokens['activity.name'] || value.activity?.name || `Activity ${id}`),
+        name: String(tokens['activity.name'] || tokens['campaign.name'] || value.activity?.name || `Activity ${id}`),
         kind: activityKind('adobe-target', { ...tokens, activityType: value.activity?.type ?? value.activityType ?? tokens['activity.type'] }),
         status: active ? 'running-in' : 'unknown',
         evidence: { state: evidence === 'rendered' ? 'applied' : active ? 'assigned' : evidence === 'failed' ? 'failed' : 'detected', observedAt: Date.now(), pageUrl: location.href },
@@ -81,6 +83,7 @@ export const adobeTargetAdapter: PageAdapter = {
         latest.set(activity.id, merged); helpers.addExperiment(merged);
       }
     };
+    installTargetCapture(helpers, data => publish(readTargetActivities(data, 'delivered'), 'delivered'));
     const monitor = {
       onCommandResolved: (result: any) => {
         // Only Target propositions (response tokens), never generic AEP commands.
