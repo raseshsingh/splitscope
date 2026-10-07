@@ -27,3 +27,9 @@ Added evidence-indexed delivery, mixed-stack, edge, property, legacy, selector, 
 ## Phase 3 — identity and correlation
 
 Added identity inspection, same-page ±30-second A4T matching, and a tracking credential ledger. Credentials are SHA-256 fingerprinted before storage; raw sensitive fields remain redacted. Missing-notification warnings are deliberately not inferred from execute requests. A4T waits 30 seconds before reporting an unmatched capture and cannot establish backend reporting success.
+
+## Phase 4 — QA and baseline controls
+
+Saved QA links are origin-scoped and capped at 50. Indexes come exclusively from supplied Adobe links; no guessed experience indexes. Open in the current/new tab and confirm qaMode from subsequent delivery. Exit removes visible site QA cookies and preview parameters. The vendor processes the preview URL itself instead of inventing cookie encodings. A fresh delivery is necessary to verify exit too.
+
+Baseline mode uses tab-scoped DNR session rules with tab-close cleanup. Optional Edge blocking explicitly warns that Analytics and identity are also affected. Cached/inline offers cannot be guaranteed blocked. Added cookies and declarativeNetRequest permissions. Rule state remains visible after reload even when delivery is blocked.

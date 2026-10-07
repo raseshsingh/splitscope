@@ -37,3 +37,11 @@ test('A4T correlates SDID on same page within 30 seconds and does not infer miss
  assert.ok(!integrityFindings(records,40000).some(f=>f.id==='T30'||f.id==='T40'));
  assert.ok(integrityFindings([records[0],{...records[1],integrity:{...records[1].integrity,sdid:'other'}}],40000).some(f=>f.id==='T40'));
 });
+import {parseQaLink,baselineRules,exitQaUrl} from '../src/core/adobe-target/qa';
+test('Adobe QA preserves real one-based mappings and baseline rules are tab-scoped',()=>{
+ assert.equal(parseQaLink('https://example.com/?at_preview_token=a%2Bb&at_preview_index=1_2','https://example.com/').index,'1_2');
+ assert.throws(()=>parseQaLink('https://example.com/?at_preview_token=a&at_preview_index=0_1','https://example.com'));
+ assert.throws(()=>parseQaLink('https://other.com/?at_preview_token=a&at_preview_index=1_1','https://example.com'));
+ assert.ok(baselineRules(9,100).every(r=>r.condition.tabIds[0]===9));assert.equal(baselineRules(9,100,true).length,4);
+ assert.equal(new URL(exitQaUrl('https://example.com/?x=y&at_preview_index=1_1')).searchParams.get('at_preview_index'),null);
+});

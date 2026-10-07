@@ -11,7 +11,7 @@ export default defineConfig({
     description: 'Inspect experiments, variations, and platform events on the page.',
     version: '0.1.14',
     minimum_chrome_version: '116',
-    permissions: ['storage', 'scripting', 'webRequest', 'activeTab'],
+    permissions: ['storage', 'scripting', 'webRequest', 'activeTab', 'cookies', 'declarativeNetRequest'],
     host_permissions: ['<all_urls>'],
     commands: {
       'toggle-panel': {

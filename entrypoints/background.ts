@@ -1,3 +1,4 @@
+import { targetCommand, clearTargetBlock } from '../src/core/adobe-target/background';
 import { appendJourney, beginJourney, readJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import { identifyEndpoint } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
@@ -11,9 +12,10 @@ const eventWrites = new Map<number, Promise<unknown>>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(messageListener(message => ['journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
+  browser.runtime.onMessage.addListener(messageListener(message => ['target.command', 'journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
     if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD, diagnostics: diagnostics() };
     const tabId = sender.tab?.id;
+    if (message.type === 'target.command' && tabId != null && sender.frameId === 0) return targetCommand(message, tabId, sender.url || sender.tab?.url || '');
     if (tabId != null && message.type?.startsWith('journey.')) return manageJourney(tabId, message.type, sender.url || sender.tab?.url || '');
     if (message?.type === 'page.snapshot' && tabId != null) {
       const state = message.state as TabSummary;
@@ -99,6 +101,7 @@ export default defineBackground(() => {
       if (timer) clearTimeout(timer);
       pendingWrites.delete(writeKey);
     }
+    void clearTargetBlock(tabId).catch(error => diagnostic('target', 'Could not clear baseline rules', error));
     void serialJourneyWrite(tabId, () => browser.storage.session.remove(`splitscope:journey:${tabId}`));
     void serialEventWrite(tabId, () => browser.storage.session.remove([`splitscope:tab:${tabId}`, `splitscope:events:${tabId}`, `splitscope:panel:${tabId}`, `splitscope:preview:${tabId}`]));
   });
