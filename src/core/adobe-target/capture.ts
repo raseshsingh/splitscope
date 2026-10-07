@@ -1,3 +1,4 @@
+import { installTargetTiming } from './timing';
 import { enrichIntegrity } from './integrity';
 import type { HookHelpers } from '../hooks/runtime';
 import { sanitize } from '../sanitize';
@@ -13,10 +14,12 @@ async function readResponse(response: Response) {
 export function installTargetCapture(helpers: HookHelpers, decision: (data: unknown)=>void) {
   if (typeof window.fetch !== 'function' || typeof XMLHttpRequest === 'undefined') return;
   let alive = true;
+  const observeTiming=installTargetTiming(helpers);
   const record = async (input: Parameters<typeof normalizeWire>[0]) => {
     if (!alive) return;
     try {
       const wire = normalizeWire(input); if (!wire) return;
+      observeTiming(wire);
       if (wire.target && wire.pipe !== 'ode') decision(wire.pipe === 'edge' ? targetPropositions(wire.response).map(p=>({...p, activityId:p.scopeDetails.activity?.id, experienceId:p.scopeDetails.experience?.id})) : wire.response);
       helpers.emit({platform:wire.target?'adobe-target':wire.pipe==='analytics'?'adobe-analytics':'page', category:'network',name:`Target inspector · ${wire.pipe} · ${wire.status || 'network failure'}`, via:'network', properties:sanitize({...wire, integrity:await enrichIntegrity(wire)},400_000,18)});
     } catch { /* Observation must not affect delivery. */ }

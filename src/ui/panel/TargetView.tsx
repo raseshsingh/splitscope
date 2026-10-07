@@ -10,12 +10,14 @@ export default function TargetView({state,onAction}: {state:PageState;onAction?:
   useEffect(()=>{const timer=setInterval(()=>tick(n=>n+1),5000);return ()=>clearInterval(timer);},[]);
   const [tab,setTab]=useState('Activities');
   const records=state.events.map(e=>e.properties).filter(isWire) as EnrichedWire[];
-  const findings=[...targetFindings(records),...integrityFindings(records)];
+  const config=(state.events.findLast(e=>(e.properties as any)?.schema==='target-config-v1')?.properties as any)?.config || {};
+  const findings=[...targetFindings(records, config),...integrityFindings(records)];
   const activities=state.experiments.filter(a=>a.platform==='adobe-target');
   return <section><h1>Adobe Target</h1><p class="ss-muted">Observed delivery and decisions. Captures begin when the extension connects; unavailable response fields cannot be inferred.</p>
-    <nav class="ss-segmented" aria-label="Adobe Target sections">{['Activities','Timeline','Raw','Identity','A4T','Tracking','Findings','QA'].map(name=><button class={tab===name?'ss-selected':''} onClick={()=>setTab(name)}>{name}</button>)}</nav>
+    <nav class="ss-segmented" aria-label="Adobe Target sections">{['Activities','Timeline','Raw','Identity','A4T','Tracking','Timing','Findings','QA'].map(name=><button class={tab===name?'ss-selected':''} onClick={()=>setTab(name)}>{name}</button>)}</nav>
     {tab==='Activities' && activities.map(a=><article class="ss-card" key={a.id}><h2>{a.name}</h2><p>{a.id} · {a.variations.find(v=>v.id===a.assignedVariationId)?.name || 'Experience not exposed'}</p><p>{a.statusReason}</p><JsonTree value={a} label="Activity details"/></article>)}
     {tab==='Activities'&&!activities.length&&<Empty title="No Target activity IDs observed">Enable response tokens in Adobe Target to expose activity and experience names.</Empty>}
+    {tab==='Timing' && <><p>Timing is based on observed prehiding and later selector mutations. It does not prove Target caused a mutation. Observations missed before connection cannot be recovered.</p><JsonTree value={config} label="Page configuration"/>{state.events.filter(e=>(e.properties as any)?.schema==='target-timing-v1'||e.platform==='adobe-target'&&e.via==='api-call').map(e=><article class="ss-card" key={e.id}><h3>{e.name}</h3><JsonTree value={e.properties} label="Timing / API arguments"/></article>)}</>}
     {tab==='QA' && <TargetQa onAction={onAction} verified={records.some(r=>r.integrity?.qaActive)}/>}
     {tab==='Identity' && records.filter(r=>r.target).map((r,i)=><article class="ss-card" key={i}><h3>{r.client || 'Target'} · {new Date(r.at).toLocaleTimeString()}</h3><JsonTree value={{session:r.session,...r.integrity?.identity}} label="Observed identity"/><CopyButton value={JSON.stringify({session:r.session,...r.integrity?.identity},null,2)}/></article>)}
     {tab==='A4T' && <><p>Same-page SDID matching within 30 seconds. Server-side reporting cannot be verified here.</p><JsonTree value={a4tMatrix(records)} label="Correlation matrix" defaultOpen/></>}

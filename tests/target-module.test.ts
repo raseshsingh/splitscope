@@ -45,3 +45,8 @@ test('Adobe QA preserves real one-based mappings and baseline rules are tab-scop
  assert.ok(baselineRules(9,100).every(r=>r.condition.tabIds[0]===9));assert.equal(baselineRules(9,100,true).length,4);
  assert.equal(new URL(exitQaUrl('https://example.com/?x=y&at_preview_index=1_1')).searchParams.get('at_preview_index'),null);
 });
+import {timingMetrics} from '../src/core/adobe-target/timing';
+test('Timing separates request duration and possible post-prehide exposure',()=>{
+ assert.deepEqual(timingMetrics(100,200,250,220),{requestToMutationMs:150,responseToMutationMs:50,possibleFlickerMs:30});
+ assert.equal(timingMetrics(100,200,250).possibleFlickerMs,undefined);
+});

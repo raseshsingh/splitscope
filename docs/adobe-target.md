@@ -33,3 +33,7 @@ Added identity inspection, same-page ±30-second A4T matching, and a tracking cr
 Saved QA links are origin-scoped and capped at 50. Indexes come exclusively from supplied Adobe links; no guessed experience indexes. Open in the current/new tab and confirm qaMode from subsequent delivery. Exit removes visible site QA cookies and preview parameters. The vendor processes the preview URL itself instead of inventing cookie encodings. A fresh delivery is necessary to verify exit too.
 
 Baseline mode uses tab-scoped DNR session rules with tab-close cleanup. Optional Edge blocking explicitly warns that Analytics and identity are also affected. Cached/inline offers cannot be guaranteed blocked. Added cookies and declarativeNetRequest permissions. Rule state remains visible after reload even when delivery is blocked.
+
+## Phase 5 — timing and telemetry
+
+Added bounded selector-mutation observation, at-body-style prehide timing, and configuration snapshots. Existing behavior-preserving at.js wrappers are shown alongside timing evidence. Timing measures request-to-observed-mutation, not proven render attribution. The before snapshot is taken when the response is inspected and can miss earlier changes. No guessed Alloy style signature is used.
