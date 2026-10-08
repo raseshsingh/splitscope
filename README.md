@@ -1,80 +1,326 @@
 # Splitscope
 
-Manifest V3 Chrome extension for CRO and experimentation QA. The current development build includes the WXT foundation, a document-start page hook, an isolated Preact panel, platform detection, first-tier experiment readers, a live event feed, experiment search, detail views, and a confirmation flow for adapter-provided variation switching.
+**See what your experimentation tools are doing on the page.**
 
-## Load the extension
+Splitscope is a Manifest V3 Chrome extension for experimentation, conversion rate optimization (CRO), and implementation QA. It brings activity inspection, variation previews, custom code, event payloads, and QA evidence into a panel on the website you are inspecting.
 
-1. Install dependencies with `npm install`.
-2. Build the Chrome extension with `npm run build`.
-3. Open `chrome://extensions` and enable **Developer mode**.
-4. Select **Load unpacked** and choose `.output/chrome-mv3`.
-5. Open a website and click the Splitscope toolbar button. The inspector opens on the page directly.
+It helps marketers, developers, analysts, and QA teams answer practical questions:
 
-The keyboard command **Alt+Shift+S** toggles the panel.
+- Which platforms are present, and which activities have a current decision for this page?
+- Which variation did this visitor receive?
+- What code, content, targeting, or traffic allocation does the platform expose?
+- Did a click or conversion trigger the expected event and properties?
+- Did an assignment change after navigation, a reload, or a preview?
+- What evidence can I share with the person investigating an issue?
 
-## Current adapter coverage
+**Current version:** 0.2.1 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
 
-The current build has detection adapters for: Adobe Target, Optimizely, VWO, Kameleoon, AB Tasty, Convert, Dynamic Yield, Unbounce, Monetate, Zoho PageSense, OneSignal, GrowthBook, Statsig, and PostHog. Optimizely, VWO, Kameleoon, AB Tasty, and Convert have initial experiment readers. Other adapters expose runtime details when the page makes them available. OneSignal is presented as an engagement SDK, not an A/B experimentation tool.
+> Coverage depends on what a website exposes. Splitscope inspects browser-visible data; it does not connect to vendor accounts or retrieve every experiment configured in a project. A reported decision does not, by itself, prove that all visual changes rendered.
 
-The hook observes API commands, documented lifecycle events, selected page-world network calls, and image-pixel requests. The event buffer is memory-only by default. Enabling **Keep event log across page loads** stores a sanitized session log in Chrome session storage and restores it when the page loads again.
+## What makes Splitscope useful
 
-Variation switching is still in active development. The confirmation dialog shows the adapter's proposed method and its reported tracking impact. Runtime formats and force behaviour need verification against live platform installs before relying on them for client QA. Safe mode and universal visitor-assignment reset are not implemented. Preview reset restores URL parameters and direct variant paths changed by Splitscope; persistent vendor assignments require vendor controls. The existing plan uses Kameleoon; Chameleon is a separate product and is not implemented.
+Splitscope combines several parts of the QA workflow in one place:
 
-## Development commands
+- **A shared workspace across platforms.** Search activities, inspect assignments, and review events through the same interface on sites using different tools.
+- **Evidence behind the status.** Current decisions are separated from project configuration and stored assignments. Missing information is identified instead of being filled with guesses.
+- **Code and behavior together.** Inspect exposed change source, highlight matching elements, and follow related events without leaving the page.
+- **Repeatable QA.** Save event expectations, compare assignments with a baseline, record a navigation journey, and export findings.
+- **Deeper Adobe Target inspection.** Investigate delivery, identity, tracking, QA links, mboxes, timing, and experience history inside Activities.
+- **Local storage and portable reports.** Settings and QA artifacts stay in the browser; there is no Splitscope telemetry backend.
 
-- `npm run dev` — run WXT in development mode
-- `npm run build` — create the unpacked Chrome MV3 extension
-- `npm run zip` — package the Chrome extension
-- `npx tsc --noEmit` — check TypeScript types
+These are the product’s distinguishing workflows, rather than a claim that every capability is unique to Splitscope.
 
-Live-site Phase 0 validation remains necessary before claiming verified support for undocumented runtime fields, variation weights, or variation forcing behavior.
+## Install and open
 
-## Redesigned workspace
+This repository provides an unpacked development build.
 
-- Active-first activities, platform/type filters, assignment explanations and copyable IDs.
-- Event rows keep payloads hidden until expanded; nested objects expand separately.
-- Event search, category/platform filters, pause, clear and filtered CSV export.
-- QA reports with notes, assignment comparison, selector outlines and overlap hints.
-- Shared popup/panel/settings design, light/dark themes, larger text and docking.
+```sh
+npm install
+npm run build
+```
 
-After rebuilding, reload Splitscope in `chrome://extensions`, then reload the website. Existing pages still contain the previous content scripts until reloaded.
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Choose **Load unpacked** and select `.output/chrome-mv3`.
+3. Open or reload the website you want to inspect.
+4. Click the Splitscope toolbar icon. The panel opens directly on the page.
 
-See [implementation review](docs/implementation-review.md) for architecture decisions, delivered changes, limitations and remaining roadmap work.
+**After an update:** rebuild, reload Splitscope in `chrome://extensions`, and reload existing website tabs. Rebuilding alone does not replace scripts already injected into a page.
 
-For the sample-data design preview, run `npx vite --config dev/vite.config.ts` and open `http://127.0.0.1:5178/dev/`. Popup and settings previews are `/dev/popup.html` and `/dev/options.html`. This preview does not exercise vendor capture or extension APIs.
+### A first QA session
 
-## On-page controls and diagnostics
+1. Open **Activities** and select **Here** to focus on current page decisions.
+2. Open an activity to inspect its assignment, exposed variations, and code.
+3. Open **Events**, interact with the website, and expand an event to inspect its payload. Choose **All event types** to include technical calls and navigation.
+4. Use **Tools** to save a comparison baseline, record a journey, or export a QA report.
+5. Open the settings gear to change appearance, retain the event log, or enable additional analytics capture.
 
-The settings gear opens inside the page panel. **Restore panel after reload** is enabled by default: an open panel reopens on the same site in that tab; closing it prevents reopening. Activities refresh automatically every 1.5 seconds while the page is visible, with additional refreshes on route changes and captured events. The fixed top strip identifies detected platforms.
+## Supported platforms
 
-The toolbar icon is green when a platform is detected and gray otherwise; its badge reports activities explicitly active for this visitor. A zero means a platform was detected without confirmed active activities.
+There are **14 registered integrations**. They cover experimentation platforms, feature flag SDKs, and OneSignal engagement events. Detection, activity enumeration, code visibility, and preview support are separate capabilities.
 
-Preview offers current-tab and new-tab choices. Tabs share visitor cookies. Convert uses its vendor preview URL. Kameleoon A/B assignment waits for the engine, saves and verifies the assignment, then reloads and may count in reports; personalization requires a vendor simulation link. Kameleoon/VWO preview URLs require Splitscope in the destination tab because the extension consumes their temporary parameters before the SDK loads.
+| Platform | Activity and decision inspection | Preview or switching in Splitscope |
+| --- | --- | --- |
+| **Optimizely** | Published Web project data, current decisions, campaigns, variations, and exposed changes. Legacy Classic inspection is also supported. | Web variation URL preview; depends on the site allowing force parameters. Classic is inspection-only. |
+| **Adobe Target** | Captured at.js and Target-specific Web SDK delivery, activity/experience metadata, offers, and observed application evidence. | Save and reopen real Adobe QA links; only known activity/experience mappings are available. |
+| **VWO** | Runtime experiments, assignments, and exposed variation changes and allocation. | Extension-assisted variation preview. Splitscope must be enabled in the destination tab. |
+| **Kameleoon** | Runtime experiments and personalizations, assignments, and exposed changes. | A/B variation assignment with engine verification and reload. Personalization requires vendor simulation tools. |
+| **AB Tasty** | Runtime activities and assignments; change and allocation details where exposed. | No built-in override. |
+| **Convert** | Runtime experiences, assignments, and exposed variation changes and allocation. | Vendor preview URL. |
+| **Dynamic Yield** | Partial runtime campaign and decision information. | Use vendor QA tools; no general in-panel switcher. |
+| **Unbounce** | Exposed landing-page and current variant metadata. | Direct variant URL for supported single-letter variant IDs. |
+| **Monetate** | Partial runtime experience and decision information. | Use vendor QA tools; no general in-panel switcher. |
+| **Zoho PageSense** | Partial runtime experiment and decision information. | Use vendor QA tools; no general in-panel switcher. |
+| **GrowthBook** | Exposed SDK instance, feature/experiment data, and evaluations. Cached configuration is not proof of a current decision. | Observation-only. |
+| **Statsig** | Observed experiment, gate, configuration, and layer evaluations; not a complete project catalog. | Observation-only. |
+| **PostHog** | Feature flags and evaluations from the exposed default instance. Flags are not automatically classified as experiments. | Observation-only. |
+| **OneSignal** | Engagement SDK detection and supported API events; no experiment catalog. | Not applicable. |
 
-For errors, open **Settings → Copy diagnostics**, or copy console messages starting with **[Splitscope/bridge]** or **[Splitscope/hook]**. Production builds currently retain readable JavaScript and `.map` files for troubleshooting. Include the affected website URL, action taken, and error stack. Review diagnostics before sharing.
+Each integration includes observation of supported calls or events. This does not mean every SDK method or network request is captured. Private SDK instances, renamed globals, runtime versions, consent, and site configuration can limit coverage.
 
-See [preview and detection changes](docs/preview-and-detection.md) for the API references and remaining live-site verification needs.
+**Kameleoon and Chameleon are different products. Chameleon is not currently implemented.**
 
-### Regression checks
+## Activities: understand the visitor’s experience
 
-`npm test` rebuilds the Chrome extension and runs adapter, detail-view and compiled bridge lifecycle checks. An optional Accor compatibility check uses a separately downloaded public Kameleoon engine: `SPLITSCOPE_KAMELEOON_ENGINE=/path/to/engine.js npm test`. It executes only the extracted assignment function, not the website or tracking engine. See [0.1.2 investigation and limits](docs/preview-and-detection.md).
+### Find the relevant activity
 
-After upgrading, reload Splitscope on `chrome://extensions` and refresh existing website tabs once. Old scripts already injected into those tabs cannot be updated by rebuilding the extension folder alone.
+- Search by activity name, activity ID, or variation ID.
+- Filter by platform and reported activity type.
+- Switch between **All**, **Here**, **Other**, and **Pinned**.
+- See current page decisions separately from configuration and stored decisions.
+- Distinguish A/B tests, personalization, split-URL tests, feature flags, configurations, and other types when the runtime exposes enough information. Unknown types remain unknown.
+- Pin activities and retain your selection and filters in a per-site workspace.
+- Click a detected platform in the top bar to filter its activities.
 
-## QA workflows (0.1.10)
+### Inspect the details
 
-- **Activities:** evidence distinguishes assigned/delivered, applied, stored, and detected-only states. Pin activities from their detail view; filters and selection are saved per site.
-- **Events → Event checks:** save exact event names, source, required property paths, and expected JSON values. Start a check, perform an action, finish, and copy results. Checks accumulate independently of the event list and survive panel reopening in the same document. Reloading ends the check. Paused recording is reported as incomplete; observations cannot establish vendor ingestion.
-- **Settings → Capture analytics calls:** opt in to future default dataLayer, Google tag, exposed Segment and AppMeasurement calls, plus recognized outgoing transport endpoints. Renamed globals, private SDKs and first-party proxy endpoints can be unavailable.
-- **Tools → Workspace:** local per-origin name, notes, filters, pins, baseline and expectations. Export or clear explicitly. Workspace changes are shared by tabs on the same origin. Exports are sanitized; review before sharing.
-- **Tools → Journey:** opt-in tab/session history across reloads and SPA navigation on the starting origin. Other origins are excluded. Stop, export, or delete; starting a new recording requires confirmation before replacing the old one. Retains up to 500 entries / 750 KB plus a bounded decision cache. It does not require Keep event log. Paused capture and missing pre-hook events remain gaps.
-- **Tools → Compare:** persistent baseline, timestamp/page, before/after status, variation and feature value.
-- **GrowthBook / Statsig / PostHog:** initial observation-only integrations, with no switching controls. Coverage depends on exposed instances; project enumeration is partial. Statsig lists observed evaluations only; PostHog flags are not assumed to be experiments.
+An activity’s detail view adapts to available platform capabilities and data:
 
-See [phase progress and limitations](docs/phase-progress.md). These changes passed compilation and production builds; they have not been verified on live vendor installs.
+- **Overview:** names, IDs, campaign references, reported status, status explanation, observation context, assignment, variations, evaluated values, goals, and exposed traffic allocation or variation weights.
+- **Code & changes:** captured activity-level and variation-level change source.
+- **Targeting:** exposed URLs, audiences, and conditions. Splitscope displays these rules but does not evaluate eligibility itself.
+- **Events:** captured events with an explicit matching platform and activity ID.
+- **Raw:** an expandable view of captured fields, normalized details, platform evidence, and linked events, with copy controls.
 
-## October polish pass
+Missing names, traffic splits, targeting rules, or variation catalogs are identified as unavailable. A single observed experience is not treated as the full list of possible experiences.
 
-Version 0.1.10 simplifies activity filters, keeps event checks collapsed by default, and separates report, comparison, journey and workspace tools. Activity details adapt to flags and experiments. Page and Settings show connection health and provide copyable diagnostics, including background errors.
+### Read custom code and visual changes
 
-Runtime changes improve endpoint matching, observation timestamps, navigation handling, preview reset and storage updates. See [polish review](docs/polish-review.md) for completed phases and validation limits.
+Where exposed by the runtime or captured offers, inspect:
+
+- JavaScript and browser-visible function source.
+- CSS, HTML, JSON, attributes, redirects, and nested visual-editor actions.
+- Shared activity code and variation-specific changes, labeled with their source field.
+- Selectors that can be highlighted on the current page.
+
+Expand individual changes to read, copy, or save the source, with line-wrapping controls. Code is displayed as text and is not executed by the inspector. Native or bound functions, private SDK code, server-side code, and unloaded variation code may be unavailable. Captured source can be minified, redacted, or truncated.
+
+### Open the activity in its vendor console
+
+Activity cards and details offer a new-tab link when Splitscope can construct a supported activity-specific route:
+
+- **Optimizely Web:** experiment or personalization campaign, using the captured project and activity/campaign IDs.
+- **Optimizely Classic:** legacy experiment editor.
+- **Convert:** experience link when account and project IDs can be identified from an unambiguous official snippet.
+- **Kameleoon:** experiment or personalization results.
+
+Other platforms hide this action when a reliable route or required identifiers are unavailable. There is no generic dashboard fallback. Vendor login and account permissions still apply; authenticated navigation is not verified for every route. See [activity link coverage](docs/dashboard-links.md).
+
+## Variation previews
+
+Supported activities expose a **Preview** action with a confirmation explaining the method and reported tracking impact. URL-based previews can open in the current tab or a new tab, and their link can be copied.
+
+- Requested previews are compared with subsequent observed assignments. A preview parameter alone does not mark a variation as applied.
+- New tabs share the browser’s visitor cookies; they are not isolated test visitors.
+- Optimizely Web forcing can be disabled by the project’s implementation settings. If the vendor ignores a force parameter, the original assignment and normal tracking may continue.
+- VWO and Kameleoon preview links require Splitscope in the destination tab because the extension processes their temporary parameters before the SDK loads.
+- Kameleoon A/B previews may persist an assignment and count in vendor reporting.
+- Adobe Target uses real saved QA links rather than guessed activity indexes or generated QA tokens.
+- Reset removes preview parameters or restores a direct variant path changed by Splitscope. Persistent vendor assignments may still require the vendor’s own reset controls.
+
+There is no universal tracking-safe mode or universal visitor-assignment reset. See [preview implementation and limits](docs/preview-and-detection.md).
+
+## Events: inspect what was sent
+
+The event timeline records supported API calls, lifecycle events, selected network requests, and page navigation.
+
+- View event name, time, platform, category, and observation source.
+- Keep payloads collapsed until opened; expand nested objects separately.
+- Inspect properties, exposed caller information, activity/variation IDs, and the page URL at capture.
+- Search event names, activity IDs, and payload values.
+- Filter by platform or event category. The default view focuses on goals and custom events.
+- Stop/start recording, or **freeze the visible list** while recording continues.
+- Copy individual events and export the filtered timeline as CSV.
+- Clear the tab’s event log with confirmation.
+- Optionally retain the sanitized event log across page loads.
+
+An observed API call establishes that the call occurred. It does not establish successful vendor ingestion or reporting.
+
+### Check event requirements
+
+Under **Events → Event checks**, define reusable expectations with:
+
+- An exact event name and source.
+- Required property paths, including nested paths.
+- Expected JSON values.
+
+Start a check, perform the website action, finish the check, and copy the results. Checks distinguish matching events, missing events, and payload mismatches. Paused recording marks the check incomplete; a reload ends the active check. Checks can survive closing and reopening the panel within the same document.
+
+### Optional analytics capture
+
+Enable **Capture analytics calls** in Settings to observe future calls through standard exposed `dataLayer`, Google tag, Segment, and Adobe Analytics/AppMeasurement APIs, plus recognized outgoing transports. Renamed globals, private instances, proxies, and calls made before capture starts may be unavailable.
+
+## Tools: turn observations into QA evidence
+
+| Tool | What it helps you do |
+| --- | --- |
+| **QA report** | Add notes and export JSON or Markdown containing assignments, platform evidence, and the event timeline. |
+| **Compare** | Save a baseline and compare activity status, variation, and feature values later. See additions, changes, and activities no longer reported, alongside the baseline page and timestamp. |
+| **Journey** | Record an opt-in, per-tab history across reloads and SPA navigation on the starting origin. Stop, export, or delete it; replacement requires confirmation. |
+| **Workspace** | Save a per-origin name, notes, pins, filters, selection, baseline, and event expectations. Export or clear it. Tabs on the same origin share workspace updates. |
+| **Selector overlap hints** | Find matching selectors in active assigned variations and highlight their elements. These are investigation leads, not proof that activities conflict. |
+
+Journey recording is separate from event-log retention. It retains up to 500 entries / 750 KB plus a bounded decision cache. Navigation to other origins is excluded, and capture gaps remain visible limitations.
+
+## Adobe Target tools
+
+Adobe Target has additional tools in a **collapsible section inside Activities**. There is no separate top-level Target tab.
+
+| Section | Features |
+| --- | --- |
+| **Findings** | Evidence-linked observations covering delivery failures or delays, mixed SDK stacks, configuration, metadata, selectors, offers, privacy signals, and other implementation concerns. |
+| **Timeline** | Captured delivery and application-related observations, distinguishing execute, prefetch, and notification flows. Prefetched content alone is not marked active. |
+| **Raw** | Expandable and copyable request/response data from supported at.js fetch/XHR and Target-specific Web SDK exchanges, subject to redaction and size limits. |
+| **Identity** | Inspect exposed identity and cookie information, including mbox session/PC, AMCV ECID, and relevant Web SDK cookie names. |
+| **A4T** | Correlate observed Target and Adobe Analytics requests using available identifiers and a same-page time window. This cannot prove backend reporting success. |
+| **Tracking** | Inspect a fingerprinted credential ledger and observed display/click notifications. Raw tracking credentials are not stored in the ledger. |
+| **Timing** | Inspect observed prehiding, configuration, selector mutations, and potential flicker evidence. Timing correlation is not proof of render attribution. |
+| **QA** | Save real QA links, reopen known experience mappings in the current/new tab, inspect observed QA mode, remove saved links, and exit QA. Includes tab-scoped baseline blocking controls. |
+| **Mboxes** | Inspect mbox parameter schemas, profile/entity/order fields, page observations, and schema drift; export CSV/JSON. An explicit probe is available when an at.js `getOffers` API has been observed. |
+| **On-device** | Inspect captured on-device decisioning metadata, activities, audiences, and rule trees. Unrecognized artifact shapes remain inspectable as raw data. |
+| **Memory** | Keep bounded local experience history, inspect first/last observations, compare captured offers, and capture the current assigned experience’s DOM. Includes limited local text replay with undo. |
+| **Conflicts** | Identify cross-platform selector matches or overlaps on current DOM nodes and highlight them for investigation. |
+
+### Target-specific behavior and limits
+
+- at.js request classification supports recognized paths on first-party CNAMEs. Generic Adobe Launch or `alloy` presence alone does not establish Target detection; Edge decisions require explicit Target evidence.
+- Saved QA links are per-origin and capped at 50. Experience indexes come from actual Adobe links. Splitscope cannot mint QA tokens or discover unseen experience mappings.
+- Baseline mode blocks selected Target requests in the current tab and is removed when the tab closes. Optional shared Adobe Edge blocking also affects Analytics and identity. Cached or inline offers may still apply.
+- Mbox probes make a real prefetch request. Splitscope does not apply the response or explicitly send a display notification, but site hooks may react.
+- Experience memory retains up to 100 experiences per origin. Counts represent captured observations, not visitors or statistical traffic allocation.
+- Local replay is restricted to text on one eligible element, with undo. It does not evaluate saved JavaScript, HTML, or CSS; site observers may still react. Screenshot comparison is not implemented.
+- Execute requests can count impressions without a separate notification. Missing notifications alone do not prove a tracking failure.
+
+See the [Adobe Target module documentation](docs/adobe-target.md) for implementation details and validation limits.
+
+## Panel, appearance, and page health
+
+- Opens directly on the inspected website, with settings inside the panel.
+- Shows detected platforms in the top bar.
+- Uses a green toolbar icon when a platform is detected and gray otherwise; the badge counts reported current activities.
+- Supports left, right, and bottom docking, minimizing, light/dark/system themes, and larger text.
+- Restores an open panel on the same site in the same tab after reload by default. Closing the panel stops that restoration.
+- Refreshes activities automatically while the page is visible, on SPA route changes, and on captured events; manual **Refresh** is also available.
+- **Page** shows the inspected URL, scan information, connection health, detection evidence, exposed platform versions, coverage notes, and runtime errors.
+- **Settings** provides connection information and copyable diagnostics. Builds retain readable JavaScript and source maps for investigation.
+
+| Shortcut | Action |
+| --- | --- |
+| `Alt+Shift+S` | Toggle the page panel. |
+| `/` inside the panel | Focus the available search field. |
+| `1`–`4` inside the panel | Open Activities, Events, Page, or Tools. |
+| `Escape` inside the panel | Dismiss a preview, return from activity details, or minimize the panel, depending on context. |
+
+Panel shortcuts respect text-entry fields. Chrome may require you to assign the extension shortcut if another application already uses it.
+
+## Privacy, storage, and permissions
+
+Splitscope has no account service or telemetry backend. Inspection and saved QA data are handled locally in the browser. Preview navigation, variation changes, and explicit probes can still contact vendors or change website visitor state.
+
+| Data | Retention |
+| --- | --- |
+| General event log | Memory by default; optional sanitized session retention across page loads. |
+| Target wire history | Separate per-tab, per-origin session ring: up to 100 captures / approximately 1 MB. Clearing Events clears this history; tab closure removes it. |
+| Journey | Opt-in tab/session history, independent of the event-log setting. |
+| Settings and site workspace | Persist locally, including saved notes, pins, baselines, and event expectations. |
+| Target QA links and experience memory | Persist locally by origin until removed or cleared through their controls. |
+
+Captured data is bounded and common sensitive fields are redacted. Redaction is not a guarantee that all personal or confidential information is removed. Saved Adobe QA links can contain reusable preview credentials. Review reports, copied code, raw data, and diagnostics before sharing them.
+
+The extension requests:
+
+- **Host access to all URLs:** inspect supported platforms on the websites you visit.
+- **Scripting and activeTab:** install the page inspector and respond to the toolbar action.
+- **Storage:** retain settings and QA artifacts.
+- **webRequest:** observe supported network metadata and requests.
+- **Cookies:** support Target identity and QA inspection/cleanup.
+- **declarativeNetRequest:** apply Target baseline blocking rules scoped to a tab.
+
+Chrome-protected pages, such as `chrome://` pages, cannot host the inspector.
+
+## Practical limits
+
+- Browser-visible configuration is not the same as an active page decision, and delivery is not the same as rendered content.
+- Capture starts when the hook loads. Calls made earlier cannot be recovered retroactively.
+- Detection and data visibility vary with SDK version, consent state, private runtime objects, network transport, and site implementation.
+- Code and payloads can be unavailable, redacted, or truncated. Splitscope does not reconstruct server-side code or fetch source maps to recover original activity source.
+- Neither events nor A4T correlations establish successful server-side ingestion, attribution, or reporting.
+- Fixture and regression coverage do not establish compatibility with every live vendor installation. Confirm preview and tracking behavior on the site you are testing.
+
+## Development
+
+The extension uses **WXT, TypeScript, Preact, Preact Signals, and Valibot**.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start WXT development mode. |
+| `npm run dev:chrome` | Start development explicitly for Chrome. |
+| `npm run build` | Generate `.output/chrome-mv3`. |
+| `npm run zip` | Package the Chrome extension. |
+| `npx tsc --noEmit` | Check TypeScript types. |
+| `npm test` | Build and run the automated regression suite. |
+
+For the sample-data UI preview:
+
+```sh
+npx vite --config dev/vite.config.ts
+```
+
+Open `http://127.0.0.1:5178/dev/`. This is a design fixture; it does not exercise live vendor capture or Chrome extension permissions.
+
+An optional Kameleoon compatibility check accepts a separately obtained public engine file:
+
+```sh
+SPLITSCOPE_KAMELEOON_ENGINE=/path/to/engine.js npm test
+```
+
+It executes only the extracted assignment function, not the complete website or tracking engine.
+
+### Architecture
+
+- `entrypoints/`: extension entry points, background worker, and content scripts.
+- `src/adapters/`: platform detection, activity readers, event hooks, and supported preview plans.
+- `src/core/`: shared models, validation, capture, sanitization, state, and QA logic.
+- `src/ui/`: the on-page panel, activity details, event timeline, and QA tools.
+- `dev/`: sample-data UI preview.
+- `tests/`: adapter, capture, UI, and compiled extension regression coverage.
+- `docs/`: implementation notes, research references, and verification limits.
+
+Page-world hooks observe supported SDK behavior. An isolated content-script bridge validates captured data and hosts the panel. The background worker handles browser-level operations and storage. Platform-specific capabilities determine the controls shown in the shared UI.
+
+### Troubleshooting
+
+If the panel fails to open after an update, reload the extension and then the website. If the issue persists, copy diagnostics from **Settings**, or collect console messages beginning with `[Splitscope/bridge]` or `[Splitscope/hook]`.
+
+Include the extension version, affected URL, action taken, and full error details. For background connection failures, also inspect the extension’s service worker in `chrome://extensions`. Review the information before sharing it.
+
+## Further documentation
+
+- [Adobe Target tools and limitations](docs/adobe-target.md)
+- [Code inspection](docs/code-inspection.md)
+- [Automatic activity links](docs/dashboard-links.md)
+- [Preview and detection behavior](docs/preview-and-detection.md)
+- [Optimizely snapshot and preview fixes in 0.2.1](docs/optimizely-fixes-0.2.1.md)
+- [Implementation review](docs/implementation-review.md)
+- [Original plan and architecture](plan.md)
+
+Older planning and phase documents describe the development history; the implemented capabilities and limits summarized above describe the current build.
