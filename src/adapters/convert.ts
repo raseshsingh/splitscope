@@ -1,7 +1,7 @@
 import { activityKind } from '../core/activity-kind';
 import { convertDashboardContext } from '../core/dashboard-links';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList } from '../core/hooks/runtime';
+import { detection, mapSafely, normalizedExperiment, variationList } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 export const convertAdapter: PageAdapter = {
@@ -19,7 +19,7 @@ export const convertAdapter: PageAdapter = {
     const data = convert?.data?.experiences || convert?.data?.experiments;
     const historical = convert?.historicalData?.experiences || {};
     const entries = Object.fromEntries([...new Set([...Object.keys(historical || {}), ...Object.keys(data || {}), ...Object.keys(current || {})])].map(id => [id, { ...(historical?.[id] || {}), ...(data?.[id] || {}), ...(current?.[id] || {}) }]));
-    return Object.entries(entries).map(([id, value]: [string, any]) => {
+    return mapSafely(Object.entries(entries), ([id, value]: [string, any]) => {
       const assigned = value?.variation || value?.currentVariation;
       const variations = variationList(value?.variations || value?.variationList);
       return normalizedExperiment({

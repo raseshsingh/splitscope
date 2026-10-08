@@ -267,7 +267,9 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   };
   helloTimer = window.setInterval(retryUntilReady, 40);
   publish();
-  const scanTimer = window.setInterval(() => {  if (!document.hidden) publish(); }, 1500);
+  // Rescan every 1.5s while the page settles, then every 3s: long-lived pages stop paying for rescans nobody needs.
+  let scanTick = 0;
+  const scanTimer = window.setInterval(() => { scanTick++; if (document.hidden || (performance.now() - started > 30000 && scanTick % 2)) return; publish(); }, 1500);
   cleanups.push(() => window.clearInterval(scanTimer));
 
   function executeForcePlan(plan: AnyRecord): void {
@@ -416,7 +418,11 @@ function safeBody(body: unknown): unknown {
 }
 
 function installHistoryHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>, publish: () => void): void {
+  let lastHref = location.href;
   const onRoute = () => {
+    // Frameworks often call replaceState with the same URL; that is not a navigation.
+    if (location.href === lastHref) { publish(); return; }
+    lastHref = location.href;
     emit({ platform: 'page', category: 'pageview', name: `Route ${location.pathname}`, properties: { url: location.href }, via: 'listener' });
     publish();
   };

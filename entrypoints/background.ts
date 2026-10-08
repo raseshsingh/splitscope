@@ -52,16 +52,16 @@ export default defineBackground(() => {
         return browser.storage.session.get(`splitscope:events:${tabId}`).then((stored) => ({ events: stored[`splitscope:events:${tabId}`] || [] }));
       });
     }
-    if (message?.type === 'popup.toggle' && Number.isInteger(message.tabId)) {
+    if (message?.type === 'popup.toggle' && !sender.tab && Number.isInteger(message.tabId)) {
       return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'panel.open', tab: message.tab }));
     }
-    if (message?.type === 'popup.openExperiment' && Number.isInteger(message.tabId)) {
+    if (message?.type === 'popup.openExperiment' && !sender.tab && Number.isInteger(message.tabId)) {
       return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'panel.openExperiment', platform: message.platform, id: message.id }));
     }
-    if (message?.type === 'popup.state' && Number.isInteger(message.tabId)) {
+    if (message?.type === 'popup.state' && !sender.tab && Number.isInteger(message.tabId)) {
       return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'page.getState' })).catch(() => null);
     }
-    if (message?.type === 'popup.rescan' && Number.isInteger(message.tabId)) {
+    if (message?.type === 'popup.rescan' && !sender.tab && Number.isInteger(message.tabId)) {
       return sendToTab(message.tabId, { type: 'page.rescan' }).catch(() => null);
     }
     if (message?.type === 'settings.get') return browser.storage.local.get('splitscope:settings');
@@ -113,14 +113,15 @@ export default defineBackground(() => {
 
   // Optional network capture must never prevent worker registration.
   try { browser.webRequest.onBeforeRequest.addListener((details) => {
+    if (details.tabId < 0 || details.type !== 'image') return undefined;
     const platform = identifyEndpoint(details.url);
-    if (!platform || details.tabId < 0 || details.type !== 'image') return undefined;
+    if (!platform) return undefined;
     browser.tabs.sendMessage(details.tabId, {
       type: 'page.networkEvent',
       event: { id: `${Date.now()}-${details.requestId}`, t: Date.now(), platform, category: 'network', name: `${details.method} ${safeUrl(details.url)}`, via: 'network', pageUrl: details.initiator, properties: { type: details.type } }
     }).catch(() => {});
     return undefined;
-  }, { urls: ['<all_urls>'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
+  }, { urls: ['<all_urls>'], types: ['image'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
   try { browser.webRequest.onCompleted.addListener(details => {
     if (details.tabId < 0 || details.frameId !== 0 || !['image','ping'].includes(details.type) || classifyTarget(details.url) !== 'analytics') return;
     void browser.tabs.get(details.tabId).then(async tab => {
@@ -130,7 +131,7 @@ export default defineBackground(() => {
       const properties = sanitize({...wire,integrity:await enrichIntegrity(wire)},100_000);
       await browser.tabs.sendMessage(details.tabId,{type:'page.networkEvent',event:{id:'target-aa-'+details.requestId,t:details.timeStamp,platform:'adobe-analytics',category:'network',name:'Target inspector · Analytics beacon',via:'network',pageUrl:tab.url,properties}});
     }).catch(()=>{});
-  },{urls:['<all_urls>']}); } catch (error) { diagnostic('target','Analytics beacon capture unavailable',error); }
+  },{urls:['<all_urls>'],types:['image','ping']}); } catch (error) { diagnostic('target','Analytics beacon capture unavailable',error); }
   // Register all core listeners before any cosmetic work.
   void Promise.resolve().then(() => browser.action.setIcon({ path: 'icons/idle.png' })).catch(error => diagnostic('background', 'Toolbar icon unavailable', error));
   console.info(`[Splitscope/background v${EXTENSION_BUILD}] Ready`);
@@ -214,8 +215,8 @@ function updateBadge(tabId: number, count: number, detected: boolean): void {
     await Promise.all([
       browser.action.setIcon({ tabId, path: detected ? 'icons/detected.png' : 'icons/idle.png' }),
       browser.action.setTitle({ tabId, title: detected ? `Splitscope: ${count} current decisions — open inspector` : 'Splitscope: no platform detected yet — open inspector' }),
-      browser.action.setBadgeText({ tabId, text: count > 99 ? '99+' : detected ? String(count) : '' }),
-      browser.action.setBadgeBackgroundColor({ tabId, color: detected ? '#08764f' : '#66758a' }),
+      browser.action.setBadgeText({ tabId, text: count > 99 ? '99+' : detected && count > 0 ? String(count) : '' }),
+      browser.action.setBadgeBackgroundColor({ tabId, color: '#d93a2b' }),
     ]);
   }).catch(error => { badgeStates.delete(tabId); diagnostic('background', 'Could not update toolbar', error); });
 }

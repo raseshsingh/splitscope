@@ -1,5 +1,5 @@
 import type { CapturedEvent } from '../model';
-import { evaluateExpectations, normalizeExpectations, type CheckResult, type EventExpectation } from './expectations';
+import { applyCounts, evaluateExpectations, normalizeExpectations, type CheckResult, type EventExpectation } from './expectations';
 export interface CheckRun { startedAt: number; endedAt?: number; rules: EventExpectation[]; results: CheckResult[]; seen: string[]; interrupted: boolean }
 export function startCheck(rules: EventExpectation[]): CheckRun {
   const snapshot = normalizeExpectations(JSON.parse(JSON.stringify(rules)));
@@ -14,9 +14,9 @@ export function recordCheck(run: CheckRun | null, event: CapturedEvent): CheckRu
     const next = matches[index]!;
     const failures = [...prior.failures, ...next.failures].slice(0, 20);
     const status = prior.status === 'failed' || next.status === 'failed' ? 'failed' : prior.status === 'unverifiable' || next.status === 'unverifiable' ? 'unverifiable' : prior.matches + next.matches ? 'passed' : 'waiting';
-    return { ...prior, status, matches: prior.matches + next.matches, failures };
+    return applyCounts(run.rules[index]!, { ...prior, status, matches: prior.matches + next.matches, failures }, false);
   }) };
 }
 export function finishCheck(run: CheckRun): CheckRun {
-  return { ...run, endedAt: Date.now(), results: run.results.map(result => ({ ...result, status: result.status === 'waiting' ? 'not-observed' : result.status })) };
+  return { ...run, endedAt: Date.now(), results: run.results.map((result, index) => applyCounts(run.rules[index]!, { ...result, status: result.status === 'waiting' ? 'not-observed' : result.status }, true)) };
 }

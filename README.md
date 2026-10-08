@@ -13,7 +13,7 @@ It helps marketers, developers, analysts, and QA teams answer practical question
 - Did an assignment change after navigation, a reload, or a preview?
 - What evidence can I share with the person investigating an issue?
 
-**Current version:** 0.2.1 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
+**Current version:** 0.5.0 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
 
 > Coverage depends on what a website exposes. Splitscope inspects browser-visible data; it does not connect to vendor accounts or retrieve every experiment configured in a project. A reported decision does not, by itself, prove that all visual changes rendered.
 

@@ -1,7 +1,7 @@
 import { mergeChanges } from '../core/changes';
 import type { NormalizedExperiment, NormalizedVariation } from '../core/model';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
+import { asArray, detection, mapSafely, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 type AnyRecord = Record<string, any>;
@@ -142,7 +142,7 @@ export const optimizelyAdapter: PageAdapter = {
     const activeIds = new Set(strings(activeResult));
     const pages = data.pages || {};
 
-    return [...index.entries()].map(([id, indexed]) => {
+    return mapSafely([...index.entries()], ([id, indexed]) => {
       const { raw, campaign, campaignId } = indexed;
       const experimentState = experimentStates[id] || {};
       const campaignState = Object.values(campaignStates).find((item: any) => String(item?.experiment?.id ?? '') === id)
@@ -176,9 +176,15 @@ export const optimizelyAdapter: PageAdapter = {
             ? 'This visitor has a stored assignment, but Optimizely does not report the activity active on this page.'
             : 'This activity is present in the published project data but is not active for this visitor on this page.';
       const pageNames = pageRecords.map((page: AnyRecord) => String(page.name || page.id)).filter(Boolean);
-      const audienceIds = strings(raw.audienceIds);
+      const audienceIds = [...new Set([...strings(raw.audienceIds), ...strings(campaign?.audienceIds)])];
       const audienceNames = asArray(raw.audienceName).map((item: any) => String(item?.name ?? item)).filter(Boolean);
-      const audiences = [...new Set([...audienceNames, ...audienceIds])].map((name) => ({ name }));
+      // Resolve audience IDs to the names shown in the Optimizely dashboard.
+      const audiences = audienceIds.length || audienceNames.length
+        ? [...new Map([...audienceNames.map(name => [name, { name }] as const), ...audienceIds.map(audienceId => { const record = data.audiences?.[audienceId]; return [audienceId, { id: audienceId, name: String(record?.name || audienceId) }] as const; })]).values()]
+        : [];
+      // Page activation code runs when the page activates and is part of what QA needs to read.
+      const activationChanges = pageRecords.flatMap((page: AnyRecord) => typeof page.activationCode === 'string' && page.activationCode.trim()
+        ? [{ type: 'js' as const, label: `Page activation code: ${page.name || page.id}`, sourcePath: `pages[${page.id}].activationCode`, code: String(sanitize(page.activationCode)) }] : []);
 
 
       return normalizedExperiment({
@@ -192,13 +198,13 @@ export const optimizelyAdapter: PageAdapter = {
         variations,
         assignedVariationId: assignment?.id == null ? undefined : String(assignment.id),
         trafficAllocation: typeof (raw.trafficAllocation ?? raw.percentageIncluded) === 'number' ? raw.trafficAllocation ?? raw.percentageIncluded : undefined,
-        changes: [...(variationChanges(raw) || []), ...(variationChanges(campaign) || [])],
+        changes: [...(variationChanges(raw) || []), ...(variationChanges(campaign) || []), ...activationChanges],
         targeting: {
           urls,
           audiences,
           conditions: pageNames.length ? pageNames.map((name) => `Optimizely page: ${name}`) : undefined
         },
-        goals: asArray(raw.metrics).map((goal: any) => ({ id: String(goal.id ?? ''), name: goal.name || String(goal.eventName || 'Goal') })),
+        goals: asArray(raw.metrics).map((goal: any) => { const event = data.events?.[goal?.event_id ?? goal?.eventId ?? goal?.id]; return { id: String(goal?.id ?? goal?.event_id ?? ''), name: String(goal?.name || event?.name || event?.apiName || goal?.eventName || goal?.field || 'Goal') }; }),
         source: ['snippet-data', 'runtime-api'],
         raw: sanitize({ experiment: raw, campaign, state: experimentState, campaignState, assignment, assignmentValue, selectedVariation: selected, pageIds, sections: raw.sections || raw.section_ids?.map((sectionId: string) => data.sections?.[sectionId]), runtime: typeof opt.get === 'function' ? 'web' : 'classic', globalHoldback: state.isGlobalHoldback, revision: data.revision })
       });

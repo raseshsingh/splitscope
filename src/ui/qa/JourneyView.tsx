@@ -3,6 +3,7 @@ import { downloadFile } from '../../core/qa/export';
 import { pretty } from '../../core/qa/presentation';
 import { Disclosure, JsonTree } from '../shared/components';
 import { useState } from 'preact/hooks';
+import ConfirmModal from '../shared/ConfirmModal';
 type Action = 'start' | 'stop' | 'clear';
 export default function JourneyView({ journey, currentUrl, onAction }: { journey: Journey | null; currentUrl: string; onAction: (action: Action) => void | Promise<void> }) {
   journey = readJourney(journey);
@@ -19,7 +20,7 @@ export default function JourneyView({ journey, currentUrl, onAction }: { journey
   return <section class="ss-card"><div class="ss-inline"><h2>Journey recording</h2>{journey && <span class={'ss-badge ' + (journey.recording && sameSite ? 'ss-recording' : '')}>{journey.recording ? sameSite ? 'Recording' : 'Outside recorded site' : 'Stopped'}</span>}</div>
     <p class="ss-caption ss-muted">Follow page visits, decisions and events through reloads. The recording stays in this tab’s browser session.</p>
     <div class="ss-actions">{!journey?.recording && <button class="ss-button ss-primary" disabled={busy} onClick={() => journey ? setConfirm('replace') : void act('start')}>{journey ? 'New recording' : 'Start recording'}</button>}{journey?.recording && <button class="ss-button" disabled={busy} onClick={() => void act('stop')}>Stop recording</button>}{journey && <><button class="ss-button" disabled={busy} onClick={() => downloadFile('splitscope-journey.json', pretty({ ...journey, decisions: undefined, entries: journey.entries.slice().sort((a, b) => a.t - b.t) }))}>Export JSON</button><button class="ss-link" disabled={busy} onClick={() => setConfirm('clear')}>Delete recording</button></>}</div>
-    {confirm && <div class="ss-notice"><p>{confirm === 'replace' ? 'Replace this recording with a new one?' : 'Delete this recording?'} Export it first to keep a copy.</p><button class="ss-button" disabled={busy} onClick={() => void act(confirm === 'replace' ? 'start' : 'clear')}>{confirm === 'replace' ? 'Replace & start' : 'Delete'}</button><button class="ss-link" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button></div>}
+    {confirm && <ConfirmModal title={confirm === 'replace' ? 'Replace existing journey?' : 'Delete this recording?'} confirm={confirm === 'replace' ? 'Replace' : 'Delete'} cancel={confirm === 'replace' ? 'Keep' : 'Cancel'} danger={confirm === 'clear'} busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => void act(confirm === 'replace' ? 'start' : 'clear')}><p>{confirm === 'replace' ? `Recording again replaces the ${journey?.entries.length ?? 0} entries already saved for this tab.` : 'This removes the saved observations for this tab.'} Export it first to keep a copy.</p></ConfirmModal>}
     {error && <p class="ss-inline-error" role="alert">{error}</p>}
     {journey && <><p class="ss-caption">Started {new Date(journey.startedAt).toLocaleString()}{journey.endedAt && <> · Stopped {new Date(journey.endedAt).toLocaleTimeString()}</>}</p><p class="ss-caption ss-muted ss-wrap">{journey.origin} · {journey.entries.length} observations{journey.omitted > 0 && <> · {journey.omitted} older observations omitted</>}</p>
       {!sameSite && journey.recording && <p class="ss-notice">Capture resumes when this tab returns to the recorded site.</p>}

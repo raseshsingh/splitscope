@@ -5,6 +5,8 @@ export function highlightSelector(selector: string): { count: number; error?: st
   let elements: Element[];
   try { elements = Array.from(document.querySelectorAll(selector)); } catch { return { count: 0, error: 'This is not a valid CSS selector.' }; }
   if (!elements.length) return { count: 0 };
+  // Bring the first match into view; otherwise the highlight is invisible for off-screen elements.
+  try { const first = elements[0]!, box = first.getBoundingClientRect(); if (box.bottom < 0 || box.top > window.innerHeight) first.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); } catch {}
   const overlay = document.createElement('div');
   overlay.setAttribute('data-splitscope-highlight', '');
   overlay.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483646';

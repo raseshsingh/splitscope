@@ -18,8 +18,12 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
       // Bound email matching so a long minified identifier cannot cause quadratic scanning.
       const text = (input.includes('@') ? input.replace(/[\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,63}/g, '[email]') : input).replace(SECRET_QUERY, '$1[redacted]');
       const clipped = text.length > MAX_STRING ? `${text.slice(0, MAX_STRING)}…[truncated]` : text;
-      budget -= clipped.length;
-      return budget < 0 ? '[payload truncated]' : clipped;
+      if (clipped.length <= budget) { budget -= clipped.length; return clipped; }
+      // Keep the start of an oversized string (usually code or markup) instead of discarding it.
+      if (budget < 64) { budget = 0; return '[payload truncated]'; }
+      const kept = `${clipped.slice(0, budget)}…[truncated]`;
+      budget = 0;
+      return kept;
     }
     if (typeof input === 'function') return visit(functionSource(input), depth, key);
     if (typeof Node !== 'undefined' && input instanceof Node) {
@@ -56,7 +60,7 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
         output[childKey] = descriptor && !('value' in descriptor) ? '[getter]' : visit(descriptor?.value, depth + 1, childKey);
       }
       catch { output[childKey] = '[getter threw]'; }
-      if (budget < 0) { output.__truncated = true; break; }
+      if (budget <= 0) { output.__truncated = true; break; }
     }
     return output;
   };

@@ -71,3 +71,38 @@ test('Null journey messages stay null; acknowledgements cannot become recordings
   assert.equal(readJourney({ ...beginJourney('https://example.test'), entries: [null] }), null);
   assert.equal(readJourney(beginJourney('https://example.test'))?.entries.length, 0);
 });
+
+test('Convert, AB Tasty and GrowthBook change code is captured from their real definition shapes', () => {
+  const convert = variationChanges({ changes: [{ id: 1, type: 'customCode', data: { js: 'convertJs()', css: '.c{color:red}' } }, { type: 'defaultCode', data: { css: '.d{top:0}' } }] })!;
+  assert.ok(convert.some(c => c.type === 'js' && c.code === 'convertJs()'));
+  assert.ok(convert.some(c => c.type === 'css' && c.code === '.c{color:red}'));
+  assert.ok(convert.some(c => c.code === '.d{top:0}'));
+  const abtasty = variationChanges({ modifications: [{ type: 'customScriptNew', value: 'abtastyScript()', selector: 'body' }, { type: 'addCSS', value: '.a{margin:0}' }, { type: 'addHTML', value: '<i>x</i>', selector: '#h' }] })!;
+  assert.ok(abtasty.some(c => c.type === 'js' && c.code === 'abtastyScript()'));
+  assert.ok(abtasty.some(c => c.type === 'css' && c.code === '.a{margin:0}'));
+  assert.ok(abtasty.some(c => c.type === 'html' && c.code === '<i>x</i>' && c.selector === '#h'));
+  const growth = variationChanges({ css: '.g{display:none}', js: 'growthJs()', domMutations: [{ selector: '.t', action: 'set', attribute: 'html', value: '<b>Hi</b>' }, { selector: '.t', action: 'append', attribute: 'class', value: 'big' }] })!;
+  assert.ok(growth.some(c => c.type === 'js' && c.code === 'growthJs()'));
+  assert.ok(growth.some(c => c.type === 'css' && c.code === '.g{display:none}'));
+  assert.ok(growth.some(c => c.type === 'html' && c.code === '<b>Hi</b>' && c.selector === '.t'));
+});
+test('VWO reads combination code from experiment sections and survives malformed cookies and entries', async () => {
+  const { vwoAdapter } = await import('../src/adapters/vwo');
+  Object.assign(globalThis, {
+    document: { cookie: '_vis_opt_exp_7_combi=2; broken=%E0%A4%A; empty', querySelector: () => null },
+    window: { VWO: {}, _vwo_exp: { bad: null, 7: { name: 'Hero test', type: 'VISUAL_AB', combs: { 1: 0.5, 2: 0.5 }, comb_n: { 1: 'Control', 2: 'Bigger' }, sections: { 1: { variations: { 2: '[{"type":"customJs","value":"vwoCode()"}]', 1: '' } } } } } }
+  });
+  const list = vwoAdapter.listExperiments();
+  assert.equal(list.length, 1);
+  const bigger = list[0].variations.find(v => v.id === '2')!;
+  assert.ok(bigger.changes?.some(c => c.code?.includes('vwoCode')));
+  assert.equal(list[0].variations.find(v => v.id === '1')!.isControl, true);
+  assert.equal(list[0].assignedVariationId, '2');
+});
+test('Optimizely resolves audience names and includes page activation code', () => {
+  const data = { experiments: { e: { id: 'e', pageIds: ['p'], audienceIds: ['a1'], variations: [{ id: 'v' }] } }, pages: { p: { id: 'p', name: 'Home', activationCode: 'function pageActivate(){return true}' } }, audiences: { a1: { name: 'Returning visitors' } } };
+  Object.assign(globalThis, { window: { optimizely: { get: (key: string) => key === 'data' ? data : { getActiveExperimentIds: () => ['e'] } } } });
+  const [activity] = optimizelyAdapter.listExperiments();
+  assert.deepEqual(activity.targeting?.audiences?.map(a => a.name), ['Returning visitors']);
+  assert.ok(activity.changes?.some(c => c.label?.includes('Home') && c.code?.includes('pageActivate')));
+});

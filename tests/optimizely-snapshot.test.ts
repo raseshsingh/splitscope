@@ -41,3 +41,25 @@ test('Personalization uses the active campaign variation ahead of stored variati
  const fixture=setup();(fixture.state as any).getExperimentStates=()=>({});(fixture.state as any).getCampaignStates=()=>({'20':{isActive:true,experiment:{id:'10'},variation:{id:'2'}}});
  assert.equal(optimizelyAdapter.listExperiments()[0].assignedVariationId,'2');
 });
+
+test('Change code is never replaced by a truncation marker, even in very large projects',()=>{
+ const code='document.querySelector(".logo").src="/alta.svg";'+'/* comment */'.repeat(500);
+ const activities=Array.from({length:150},(_,i)=>normalizedExperiment({platform:'optimizely',id:String(i),name:'Experiment '+i,kind:'ab',status:'running-in',assignedVariationId:'2',variations:[{id:'1',name:'Original'},{id:'2',name:'New',changes:[{type:'js',code:code+i,sourcePath:'definition.actions[0].changes[0].value'}]}],changes:[{type:'js',code:'shared('+i+')'}],raw:{datafile:'x'.repeat(200000),more:Array.from({length:400},(_,n)=>({n,text:'y'.repeat(900)}))}}));
+ const input={url:'https://example.test',capturedAt:1,platforms:[],experiments:activities,page:{title:'Page',referrer:'',readyState:'complete'}};
+ const payload=serializeSnapshot(input);const parsed=parseSnapshot(payload)!;
+ assert.equal(parsed.experiments.length,150);assert.equal(parsed.omitted,0);
+ parsed.experiments.forEach((a:any,i)=>{assert.equal(a.variations[1].changes[0].code,code+i);assert.equal(a.changes[0].code,'shared('+i+')');});
+ assert.ok(JSON.stringify(payload).length<3_600_000);
+ assert.ok(parseBridgeMessage({namespace:'__splitscope__',nonce:'test',type:'snapshot',payload}));
+});
+test('Oversized code is shortened in place and keeps its beginning',()=>{
+ const big='/*start*/'+'a'.repeat(95000);
+ const activities=Array.from({length:60},(_,i)=>normalizedExperiment({platform:'optimizely',id:String(i),name:'E'+i,kind:'ab',status:'running-in',variations:[{id:'2',name:'New',changes:[{type:'js',code:big}]}]}));
+ const parsed=parseSnapshot(serializeSnapshot({url:'https://example.test',capturedAt:1,platforms:[],experiments:activities,page:{title:'',referrer:'',readyState:'complete'}}))!;
+ assert.equal(parsed.experiments.length,60);
+ for(const a of parsed.experiments as any[]){const code=a.variations[0].changes[0].code as string;assert.ok(code.startsWith('/*start*/'));assert.notEqual(code,'[payload truncated]');}
+});
+test('sanitize clips an oversized string instead of replacing it',()=>{
+ const out=sanitize({a:'z'.repeat(50),b:'start-'+'q'.repeat(5000)},1000,4) as any;
+ assert.ok(String(out.b).startsWith('start-'));assert.match(String(out.b),/truncated/);
+});

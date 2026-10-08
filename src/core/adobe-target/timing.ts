@@ -25,8 +25,12 @@ export function installTargetTiming(helpers:HookHelpers) {
  if(touched){pending.delete(selector);const mutation=Date.now();emit('Target selector mutation observed',{schema:'target-timing-v1',selector,...timingMetrics(watch.start,watch.response,mutation,prehideEnd),prehideObserved:prehideStart!==undefined,before:watch.before,after:nodes[0]?.outerHTML.slice(0,12000),attribution:'Temporal correlation only; another script may have changed this element.'});}
  }catch{pending.delete(selector);}
  }
+ if(!pending.size)watch(false);
  });
- observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});checkPrehide();
+ // Attribute and text mutations are only watched while a Target response is waiting to be correlated; otherwise only node additions matter (prehide style).
+ let wide=false;
+ const watch=(full:boolean)=>{if(full===wide)return;wide=full;observer.observe(document,full?{subtree:true,childList:true,attributes:true,characterData:true}:{subtree:true,childList:true});};
+ observer.observe(document,{subtree:true,childList:true});checkPrehide();
  let last='';
  const captureConfig=()=>{
  const target=(window as any).adobe?.target;const settings=target?.settings||(window as any).targetGlobalSettings;
@@ -38,6 +42,6 @@ export function installTargetTiming(helpers:HookHelpers) {
  helpers.addCleanup(()=>{observer.disconnect();clearInterval(timer);pending.clear();});
  return (r:TargetWire)=>{
  if(!r.target||r.pipe==='ode')return;
- walk(r.response,node=>{const selector=node.cssSelector||node.selector;if(typeof selector!=='string'||selector.length>2000||pending.size>=100)return;try{pending.set(selector,{page:r.page,start:r.at,response:Date.now(),before:document.querySelector(selector)?.outerHTML.slice(0,12000)||''});}catch{}});
+ walk(r.response,node=>{const selector=node.cssSelector||node.selector;if(typeof selector!=='string'||selector.length>2000||pending.size>=100)return;try{pending.set(selector,{page:r.page,start:r.at,response:Date.now(),before:document.querySelector(selector)?.outerHTML.slice(0,12000)||''});watch(true);}catch{}});
  };
 }

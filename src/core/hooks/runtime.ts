@@ -41,19 +41,26 @@ export function asArray<T = AnyRecord>(value: unknown): T[] {
   return [];
 }
 
+/** Map every entry independently so one malformed record cannot hide the rest of a platform's activities. */
+export function mapSafely<T, R>(items: T[], fn: (item: T, index: number) => R | undefined | null): R[] {
+  const output: R[] = [];
+  items.forEach((item, index) => { try { const value = fn(item, index); if (value != null) output.push(value); } catch { /* skip the malformed record */ } });
+  return output;
+}
+
 export function valueName(value: any, fallback: string): string {
   return typeof value?.name === 'string' && value.name ? value.name : fallback;
 }
 
-export function variationList(raw: any, options: { names?: any; weights?: any; changes?: (item: any) => NormalizedChange[] | undefined } = {}): NormalizedVariation[] {
+export function variationList(raw: any, options: { names?: any; weights?: any; changes?: (item: any, id: string) => NormalizedChange[] | undefined } = {}): NormalizedVariation[] {
   const values = Array.isArray(raw) ? raw.map((value, index) => [String(index), value] as const) : Object.entries(raw || {});
   return values.map(([key, variation]: any, index) => {
     const id = String(variation?.id ?? variation?.variationId ?? variation?.key ?? key);
     const name = String(variation?.name ?? options.names?.[id] ?? options.names?.[index] ?? `Variation ${index + 1}`);
     const weightValue = variation?.weight ?? variation?.trafficAllocation ?? variation?.traffic ?? options.weights?.[id] ?? options.weights?.[index];
     const weight = Number.isFinite(Number(weightValue)) ? Number(weightValue) : undefined;
-    const changes = options.changes?.(variation) || variationChanges(variation);
-    return { id, name, isControl: Boolean(variation?.isControl || variation?.control), weight, changes, raw: sanitize(variation) };
+    const changes = options.changes?.(variation, id) || variationChanges(variation);
+    return { id, name, isControl: Boolean(variation?.isControl || variation?.control || /^(original|control|baseline)$/i.test(name.trim())), weight, changes, raw: sanitize(variation) };
   });
 }
 

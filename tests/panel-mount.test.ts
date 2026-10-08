@@ -64,7 +64,7 @@ test('Snapshot and malformed page messages do not prevent opening the built pane
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
 async function click(h: any, label: string) {
-  const button = [...h.shadow.querySelectorAll('button')].find((node: any) => !node.closest('[hidden]') && node.textContent.trim() === label) as any;
+  const button = [...h.shadow.querySelectorAll('button')].find((node: any) => !node.closest('[hidden]') && (node.textContent.trim() === label || node.getAttribute('aria-label') === label)) as any;
   assert.ok(button, `Button ${label} exists`); assert.equal(button.disabled, false);
   button.click(); await settle();
   assert.doesNotMatch(h.shadow.querySelector('.ss-app').textContent, /Panel render failed|could not display this page/);
@@ -109,13 +109,14 @@ test('Compiled panel: every main tab, code/raw/targeting/events, search and QA t
   await click(h, 'Freeze list'); await click(h, 'Resume live list'); await click(h, 'Stop recording'); await click(h, 'Start recording');
   await click(h, 'Export CSV'); assert.match(await h.downloads.at(-1)!.text(), /purchase/);
   await section(h, 'page'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Inspector connection/);
-  await section(h, 'settings'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Capture analytics calls/);
+  await section(h, 'settings'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Capture analytics calls/); assert.ok(h.shadow.querySelector('.ss-drawer')); await click(h, 'Close settings'); assert.equal(h.shadow.querySelector('.ss-drawer'), null);
   await section(h, 'tools'); await click(h, 'JSON report'); assert.equal(JSON.parse(await h.downloads.at(-1)!.text()).activities[0].id, 'e');
   await click(h, 'Markdown'); assert.match(await h.downloads.at(-1)!.text(), /Code fixture/);
   await click(h, 'Compare'); await click(h, 'Save baseline'); assert.match(h.shadow.querySelector('.ss-app').textContent, /No assignment changes/);
+  await click(h, 'Overlap'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Selector overlap hints/);
   await click(h, 'Journey'); await click(h, 'Start recording'); assert.match(h.shadow.querySelector('.ss-app').textContent, /0 observations/);
   await click(h, 'Stop recording'); await click(h, 'Export JSON'); assert.equal(JSON.parse(await h.downloads.at(-1)!.text()).recording, false);
-  await click(h, 'New recording'); await click(h, 'Cancel'); await click(h, 'Delete recording'); await click(h, 'Delete'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Start recording/);
+  await click(h, 'New recording'); await click(h, 'Keep'); await click(h, 'Delete recording'); await click(h, 'Delete'); assert.match(h.shadow.querySelector('.ss-app').textContent, /Start recording/);
   await click(h, 'Workspace'); await click(h, 'Export workspace'); assert.equal(JSON.parse(await h.downloads.at(-1)!.text()).workspace.pinned[0], 'optimizely:e');
   await click(h, 'Clear this workspace'); await click(h, 'Clear workspace'); assert.match(h.shadow.querySelector('.ss-app').textContent, /0 pinned activities/);
   await h.send({ type: 'panel.close' });
@@ -132,8 +133,7 @@ test('Target-specific sections all render from captured delivery data', async ()
  tools.click();await settle();
  for(const name of ['Timeline','Raw','Identity','A4T','Tracking','Timing','Findings','QA','Mboxes','On-device','Memory','Conflicts']){
   const picker=h.shadow.querySelector('[aria-label="Adobe Target tool"]');assert.ok(picker,name);
-  for(const option of picker.querySelectorAll('option'))option.selected=option.value===name;
-  picker.dispatchEvent(new h.document.defaultView.Event('change',{bubbles:true}));await settle();
+  const tabButton=[...picker.querySelectorAll('button')].find((b:any)=>b.textContent.trim()===name) as any;assert.ok(tabButton,name);tabButton.click();await settle();
   assert.doesNotMatch(h.shadow.querySelector('.ss-panel')?.textContent || '',/could not display this page/);assert.ok(h.shadow.querySelector('.ss-panel'),name);
  }
  await h.send({type:'panel.close'});

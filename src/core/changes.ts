@@ -10,8 +10,8 @@ function members(value: unknown): Array<[string, unknown]> {
   if (!value || typeof value !== 'object') return [];
   try { return Object.keys(value).slice(0, 500).map(key => [key, own(value, key)]); } catch { return []; }
 }
-const jsFields = ['code', 'js', 'javascript', 'customCode', 'customJs', 'customJS', 'jsCode', 'javaScriptCode', 'custom_code', 'globalCode', 'globalJs'];
-const containers = ['actions', 'changes', 'options'];
+const jsFields = ['code', 'js', 'javascript', 'customCode', 'customJs', 'customJS', 'jsCode', 'javaScriptCode', 'custom_code', 'globalCode', 'globalJs', 'custom_js', 'customJavascript'];
+const containers = ['actions', 'changes', 'options', 'modifications', 'domMutations'];
 
 /** Extract only change containers and explicit code fields, never unrelated SDK methods or other variations. */
 export function variationChanges(raw: unknown): NormalizedChange[] | undefined {
@@ -45,7 +45,7 @@ export function variationChanges(raw: unknown): NormalizedChange[] | undefined {
     const start = result.length;
     const html = /html|appendcontent|prependcontent|replacecontent|insertbefore|insertafter|setcontent/.test(type);
     const css = /css|style/.test(type);
-    const js = /javascript|customcode|script|^js$/.test(type);
+    const js = /javascript|customcode|customjs|script|^js$/.test(type);
     const language = html ? 'html' : css ? 'css' : 'js';
     for (const field of jsFields) {
       const source = own(value, field);
@@ -59,6 +59,18 @@ export function variationChanges(raw: unknown): NormalizedChange[] | undefined {
     }
     // Target actions offers contain a list of rendering operations in content.
     if (type === 'actions' || type === 'action') visit(own(value, 'content'), path + '.content', depth + 1, true, selector);
+    // Convert and similar platforms keep the code of a change under a data object.
+    const nestedData = typeof schema === 'string' ? undefined : own(value, 'data');
+    if (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)) {
+      for (const field of jsFields) addCode(own(nestedData, field), language, `${path}.data.${field}`, selector);
+      for (const field of ['css', 'customCss', 'customCSS', 'custom_css']) addCode(own(nestedData, field), 'css', `${path}.data.${field}`, selector);
+      addCode(own(nestedData, 'html'), 'html', `${path}.data.html`, selector);
+    }
+    // GrowthBook visual-editor mutations: { selector, action, attribute, value }.
+    const mutationAttribute = own(value, 'attribute');
+    if (typeof mutationAttribute === 'string' && typeof own(value, 'value') === 'string' && mutationAttribute.toLowerCase() === 'html') {
+      addCode(own(value, 'value'), 'html', `${path}.value`, selector);
+    }
     const attributes = own(value, 'attributes');
     if (attributes) {
       addCode(own(attributes, 'html'), 'html', path + '.attributes.html', selector);

@@ -1,6 +1,6 @@
 import { activityKind } from '../core/activity-kind';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
+import { asArray, detection, mapSafely, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 export const abTastyAdapter: PageAdapter = {
@@ -12,14 +12,14 @@ export const abTastyAdapter: PageAdapter = {
     return detection('blocked', [], 0);
   },
   listExperiments() {
-    const ab = (window as any).ABTasty;
+    const ab = (window as any).ABTasty || (window as any).abtasty;
     if (!ab) return [];
     const tests = ab.accountData?.tests || ab.tests || {};
     const results = ab.results || {};
     const history = (() => { try { return ab.getCampaignHistory?.() || {}; } catch { return {}; } })();
     const onPage = new Set(asArray(ab.getTestsOnPage?.()).map((item: any) => String(item.id ?? item)));
     const ids = new Set([...Object.keys(tests), ...Object.keys(results), ...Object.keys(history)]);
-    return Array.from(ids).map((id) => {
+    return mapSafely(Array.from(ids), (id) => {
       const raw: any = (tests as any)[id] || (results as any)[id] || {};
       const assigned = (history as any)[id];
       const variations = variationList(raw.variations || raw.variationsList, { weights: raw.traffic, names: raw.variationNames });
@@ -41,7 +41,7 @@ export const abTastyAdapter: PageAdapter = {
     });
     helpers.listen('abtasty_consentValid', () => helpers.emit({ platform: 'ab-tasty', category: 'consent', name: 'consentValid', via: 'dom-event' }));
     helpers.wrapMethod(() => (window as any).ABTasty, 'ClickTracking', 'ab-tasty', (args) => String(args[0] || 'ABTastyClickTracking'), 'goal');
-    helpers.wrapMethod(() => (window as any).ABTasty, 'send', (window as any).ABTasty ? 'ab-tasty' : 'ab-tasty', (args) => String(args[0] || 'ABTasty.send'));
+    helpers.wrapMethod(() => (window as any).ABTasty, 'send', 'ab-tasty', (args) => String(args[0] || 'ABTasty.send'));
     helpers.wrapQueue('_abtasty', 'ab-tasty', (args) => String((args[0] as any)?.[0] || '_abtasty.push'));
   }
 };

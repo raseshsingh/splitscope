@@ -1,6 +1,6 @@
 import { activityKind } from '../core/activity-kind';
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList } from '../core/hooks/runtime';
+import { asArray, detection, mapSafely, normalizedExperiment, variationList } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 export const dynamicYieldAdapter: PageAdapter = {
@@ -16,10 +16,10 @@ export const dynamicYieldAdapter: PageAdapter = {
     const dyo = win.DYO;
     let rawList: any[] = [];
     try { rawList = asArray(dyo?.getRenderedObjectsOnPage?.() || dyo?.getUserObjectsAndVariations?.()); } catch {}
-    return rawList.map((raw, index) => {
+    return mapSafely(rawList, (raw, index) => {
       const experimentId = raw?.campaignId ?? raw?.id ?? raw?.experienceId ?? index;
       const variant = raw?.variation || raw?.variationObject || raw;
-      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: typeof dyo?.getRenderedObjectsOnPage === 'function' ? 'running-in' : 'unknown', variations: variationList(raw?.variations || [variant]), assignedVariationId: String(variant?.variationId ?? variant?.id ?? ''), source: ['runtime-api'], raw: raw });
+      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: typeof dyo?.getRenderedObjectsOnPage === 'function' ? 'running-in' : 'unknown', variations: variationList(raw?.variations || [variant]), assignedVariationId: (variant?.variationId ?? variant?.id) == null ? undefined : String(variant?.variationId ?? variant?.id), source: ['runtime-api'], raw: raw });
     });
   },
   install(helpers) {

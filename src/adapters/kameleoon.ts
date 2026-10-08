@@ -1,5 +1,5 @@
 import type { PageAdapter } from '../core/hooks/runtime';
-import { asArray, detection, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
+import { asArray, detection, mapSafely, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
 function readCollection(kind: 'Experiments' | 'Personalizations'): any[] {
@@ -20,7 +20,7 @@ export const kameleoonAdapter: PageAdapter = {
       ...readCollection('Experiments').map((value) => ({ value, kind: 'ab' as const })),
       ...readCollection('Personalizations').map((value) => ({ value, kind: 'personalization' as const }))
     ];
-    return entries.map(({ value, kind }) => {
+    return mapSafely(entries.filter(({ value }) => value && typeof value === 'object'), ({ value, kind }) => {
       const variations = variationList(value.variations, { weights: value.trafficDeviation || value.deviations || value.trafficAllocation });
       // The public API returns names/IDs only. Read optional loaded definitions without executing them.
       const definitions = asArray((window as any).Kameleoon?.Internals?.runtime?.variations);

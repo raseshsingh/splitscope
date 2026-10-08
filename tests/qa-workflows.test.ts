@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { startCheck, recordCheck, finishCheck } from '../src/core/qa/check-run';
 import { createPreview, resetPreviewUrl, previewOutcome } from '../src/core/qa/preview';
 import { beginJourney, appendJourney, recordSnapshot } from '../src/core/qa/journey';
-import { emptyWorkspace, normalizeWorkspace } from '../src/core/qa/workspace';
+import { emptyWorkspace, normalizeWorkspace, parseWorkspaceImport } from '../src/core/qa/workspace';
+import { normalizeExpectations } from '../src/core/qa/expectations';
 import { searchExperiments } from '../src/core/search';
 import { normalizedExperiment } from '../src/core/hooks/runtime';
 import { emptyPageState } from '../src/core/state';
@@ -71,4 +72,34 @@ test('Reports and CSV preserve source text, escape cells, and redact secret prop
   assert.equal((report.events[0] as any).properties.password, '[redacted]');
   assert.match(markdownReport(state, 'QA notes'), /Fixture/);
   assert.match(eventsCsv([{ ...state.events[0], name: '=danger,"value"' }]), /"'=danger,""value"""/);
+});
+test('Count limits catch duplicate events and events that must not fire', () => {
+  const once = { ...rule, id: 'once', maxCount: 1, required: [], equals: {} };
+  let run = startCheck([once]);
+  run = recordCheck(run, event('a', {}, run.startedAt))!;
+  assert.equal(run.results[0].status, 'passed');
+  run = recordCheck(run, event('b', {}, run.startedAt))!;
+  assert.equal(run.results[0].status, 'failed');
+  assert.match(run.results[0].failures.at(-1)!.issues[0], /at most 1/);
+  const never = { ...rule, id: 'never', maxCount: 0, minCount: 0, required: [], equals: {} };
+  assert.equal(finishCheck(startCheck([never])).results[0].status, 'passed');
+  const twice = { ...rule, id: 'twice', minCount: 2, required: [], equals: {} };
+  let short = startCheck([twice]);
+  short = recordCheck(short, event('c', {}, short.startedAt))!;
+  assert.equal(short.results[0].status, 'passed');
+  assert.equal(finishCheck(short).results[0].status, 'failed');
+  assert.equal(finishCheck(startCheck([twice])).results[0].status, 'not-observed');
+});
+test('Expectation counts are normalized and clamped', () => {
+  const [a] = normalizeExpectations([{ id: 'x', eventName: 'e', minCount: 5, maxCount: 2 }]);
+  assert.equal(a.minCount, 2); assert.equal(a.maxCount, 2);
+  const [b] = normalizeExpectations([{ id: 'y', eventName: 'e', minCount: -1, maxCount: 1.5 }]);
+  assert.equal(b.minCount, undefined); assert.equal(b.maxCount, undefined);
+});
+test('Workspace export files can be imported again and bad files are rejected', () => {
+  const exported = JSON.stringify({ exportedAt: 'now', workspace: { ...emptyWorkspace(), name: 'QA', pinned: ['a'] }, expectations: [{ id: 'x', eventName: 'e', maxCount: 1 }] });
+  const parsed = parseWorkspaceImport(exported)!;
+  assert.equal(parsed.workspace.name, 'QA'); assert.equal(parsed.expectations[0].maxCount, 1);
+  assert.equal(parseWorkspaceImport('not json'), null);
+  assert.equal(parseWorkspaceImport('{"foo":1}'), null);
 });
