@@ -24,3 +24,7 @@
 
 .ss-target-nav { flex-wrap: wrap; gap: 4px; }
 .ss-target-nav button { flex: 0 1 auto; }
+
+.ss-target-tools { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+.ss-target-tool-picker { display:flex; align-items:center; gap:12px; margin:12px 0; }
+.ss-target-tool-picker select { flex:1; min-width:0; }

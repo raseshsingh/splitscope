@@ -1,6 +1,6 @@
-# Adobe Target module — 0.2.0
+# Adobe Target module — updated in 0.2.1
 
-The supplied six-phase specification is implemented incrementally, with a commit per phase. Adobe Target controls live in the Target section; other platform workflows are unchanged.
+The supplied six-phase specification is implemented incrementally, with a commit per phase. Adobe Target controls live in the collapsible Adobe Target tools section inside Activities; other platform workflows are unchanged.
 
 ## Phase 1 — wire capture
 
@@ -61,3 +61,5 @@ Sources for the probe and Web SDK ledger:
 - https://experienceleague.adobe.com/en/docs/experience-platform/collection/use-cases/personalization/display-events
 
 Final verification for 0.2.0: 56 tests passed, 0 failed, 1 optional external Accor engine check skipped. TypeScript and production build passed. Each implementation phase was committed separately. The session-ring and compiled background QA/blocking tests do not require vendor accounts.
+
+0.2.1 removes the standalone Target tab and its duplicate activity list. The tool selector and baseline recovery remain inside Activities.

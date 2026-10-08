@@ -1,3 +1,4 @@
+import { serializeSnapshot } from '../bridge/snapshot';
 import { EXTENSION_BUILD } from '../extension/messages';
 import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
@@ -44,8 +45,9 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const post = (type: 'snapshot' | 'event' | 'status', payload: unknown) => {
     const targetWire = type === 'event' && (payload as any)?.properties?.schema === 'target-wire-v1';
     if (stopped) return;
-    if (!connected && queued.length < 1000) queued.push({ type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : targetWire ? 400_000 : 200_000, type === 'snapshot' ? 16 : targetWire ? 20 : 10) });
-    else window.postMessage({ namespace: '__splitscope__', nonce, type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : targetWire ? 400_000 : 200_000, type === 'snapshot' ? 16 : targetWire ? 20 : 10) }, '*');
+    const clean = type === 'snapshot' ? serializeSnapshot(payload as HookSnapshot) : sanitize(payload, targetWire ? 400_000 : 200_000, targetWire ? 20 : 10);
+    if (!connected && queued.length < 1000) queued.push({ type, payload: clean });
+    else window.postMessage({ namespace: '__splitscope__', nonce, type, payload: clean }, '*');
   };
 
   const emit: HookHelpers['emit'] = (event) => {

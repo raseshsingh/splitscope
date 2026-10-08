@@ -38,6 +38,6 @@ export function previewOutcome(record: PreviewRecord, activities: NormalizedExpe
   const activity = activities.find(item => item.platform === record.platform && item.id === record.experimentId);
   if (!activity || activity.status !== 'running-in') return 'Assignment unconfirmed on this page';
   if (activity.assignedVariationId === record.variationId) return 'Requested assignment observed';
-  if (activity.assignedVariationId != null) return `Different assignment observed: ${activity.variations.find(v => v.id === activity.assignedVariationId)?.name || activity.assignedVariationId}`;
+  if (activity.assignedVariationId != null) return `Different assignment observed: ${activity.variations.find(v => v.id === activity.assignedVariationId)?.name || activity.assignedVariationId}` + (record.platform === 'optimizely' ? '. Optimizely has not confirmed this switch. Check that force variation parameters are enabled in the project’s Settings → Implementation, and that the requested variation is published.' : '');
   return 'Assignment unconfirmed on this page';
 }

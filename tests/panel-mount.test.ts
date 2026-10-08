@@ -127,10 +127,13 @@ test('Target-specific sections all render from captured delivery data', async ()
  h.post({namespace:'__splitscope__',nonce,type:'event',payload:{id:'target-wire',t:Date.now(),platform:'adobe-target',category:'network',name:'Target delivery',via:'network',properties:{schema:'target-wire-v1',pipe:'atjs2',url:'https://target.example.com/rest/v1/delivery',page:'https://www.keurig.com/',at:Date.now(),duration:10,status:200,target:true,ajoCount:0,locations:[],request:{},response:{}}}});
  await h.send({type:'panel.open'});await settle();
  const button=(name:string)=>[...h.shadow.querySelectorAll('button')].find((b:any)=>b.textContent.trim()===name) as any;
- button('Target').click();await settle();
- for(const name of ['Activities','Timeline','Raw','Identity','A4T','Tracking','Timing','Findings','QA','Mboxes','On-device','Memory','Conflicts']){
-  const nav=h.shadow.querySelector('[aria-label="Adobe Target sections"]');assert.ok(nav,name);
-  [...nav.querySelectorAll('button')].find((b:any)=>b.textContent===name)!.click();await settle();
+ assert.ok(!button('Target'));
+ const tools=[...h.shadow.querySelectorAll('button')].find((b:any)=>b.textContent.includes('Adobe Target tools')) as any;
+ tools.click();await settle();
+ for(const name of ['Timeline','Raw','Identity','A4T','Tracking','Timing','Findings','QA','Mboxes','On-device','Memory','Conflicts']){
+  const picker=h.shadow.querySelector('[aria-label="Adobe Target tool"]');assert.ok(picker,name);
+  for(const option of picker.querySelectorAll('option'))option.selected=option.value===name;
+  picker.dispatchEvent(new h.document.defaultView.Event('change',{bubbles:true}));await settle();
   assert.doesNotMatch(h.shadow.querySelector('.ss-panel')?.textContent || '',/could not display this page/);assert.ok(h.shadow.querySelector('.ss-panel'),name);
  }
  await h.send({type:'panel.close'});

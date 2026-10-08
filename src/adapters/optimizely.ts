@@ -147,7 +147,9 @@ export const optimizelyAdapter: PageAdapter = {
       const experimentState = experimentStates[id] || {};
       const campaignState = Object.values(campaignStates).find((item: any) => String(item?.experiment?.id ?? '') === id)
         || {}; // A campaign decision belongs only to its selected experience.
-      const assignmentValue = variationMap[id] ?? experimentState.variation ?? campaignState?.variation;
+      const assignmentValue = experimentState.isActive === true && experimentState.variation != null ? experimentState.variation
+        : campaignState?.isActive === true && campaignState.variation != null ? campaignState.variation
+        : experimentState.variation ?? campaignState?.variation ?? variationMap[id];
       const assignment = Array.isArray(assignmentValue) ? (assignmentValue.length === 1 ? { id: assignmentValue[0] } : undefined) : assignmentValue != null && typeof assignmentValue !== 'object' ? { id: assignmentValue } : assignmentValue;
       const pageIds = experimentPageIds(raw, campaign);
       const pageRecords = pageIds.map((pageId) => pages[pageId]).filter(Boolean);
@@ -227,17 +229,20 @@ export const optimizelyAdapter: PageAdapter = {
   },
   force(experimentId, variationId, pageUrl) {
     const url = new URL(pageUrl);
-    const prior = url.searchParams.get('optimizely_x');
-    const ids = prior ? prior.split(',').filter(Boolean) : [];
+    const ids = url.searchParams.getAll('optimizely_x').flatMap(value => value.split(',')).map(id => id.trim()).filter(Boolean);
     const experiment = this.listExperiments().find((item) => item.id === experimentId);
     const variation = experiment?.variations.find((item) => item.id === variationId);
     if (!variation) throw new Error('This variation is not present in Optimizely project data.');
     if (typeof (window as any).optimizely?.get !== 'function') throw new Error('Variation preview is supported for Optimizely Web. Classic data can be inspected, but its forcing mechanism is not verified.');
+    const forceAllowed = getData((window as any).optimizely)?.enableForceParameters;
+    if (forceAllowed === false) throw new Error('This Optimizely project disables force variation parameters. A project owner must enable them in Settings → Implementation and publish the snippet, or provide an official QA preview link.');
     if (url.searchParams.get('optimizely_disable') === 'true') throw new Error('Optimizely is disabled in this URL. Remove optimizely_disable before previewing.');
     const competing = new Set(this.listExperiments().filter(item => item.id === experimentId || (experiment?.campaignId && item.campaignId === experiment.campaignId)).flatMap(item => item.variations.map(v => v.id)));
     const next = ids.filter(id => !competing.has(id)); next.push(variationId);
+    // Remove obsolete Classic-style overrides for the same experiment.
+    url.searchParams.delete('optimizely_x' + experimentId);
     url.searchParams.set('optimizely_x', [...new Set(next)].join(','));
     const tracked = url.searchParams.get('optimizely_force_tracking') === 'true';
-    return { method: 'url', url: url.href, tracking: tracked ? 'counted' : 'disabled', explanation: 'Reloads using Optimizely’s variation-ID force parameter. Replaces earlier selections for this experiment or campaign and preserves other experiments. ' + (tracked ? 'The existing force-tracking parameter enables tracking.' : 'Force parameters disable tracking unless the site overrides that behavior.') + ' The project must allow force parameters; verify the reported assignment after loading.' };
+    return { method: 'url', url: url.href, tracking: tracked ? 'counted' : forceAllowed === true ? 'disabled' : 'unknown', explanation: 'Reloads using Optimizely’s variation-ID force parameter. Replaces earlier selections for this experiment or campaign and preserves other experiments. ' + (tracked ? 'The existing force-tracking parameter enables tracking.' : 'When Optimizely accepts force parameters, tracking is disabled. If forcing is disabled in the project, the normal assignment and tracking remain in effect.') + ' The project must allow force parameters; verify the reported assignment after loading.' };
   }
 };
