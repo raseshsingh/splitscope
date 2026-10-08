@@ -50,3 +50,45 @@ test('Timing separates request duration and possible post-prehide exposure',()=>
  assert.deepEqual(timingMetrics(100,200,250,220),{requestToMutationMs:150,responseToMutationMs:50,possibleFlickerMs:30});
  assert.equal(timingMetrics(100,200,250).possibleFlickerMs,undefined);
 });
+import {mboxInventory,inventoryCsv,rememberExperiences,odeInventory} from '../src/core/adobe-target/inventory';
+test('Inventory marks cross-page schema differences and memory excludes prefetch and duplicate observations',()=>{
+ const r=normalizeWire({url:'https://target.example.com/rest/v1/delivery?client=foo',page:'https://example.com/a',at:1,duration:20,status:200,request:{execute:{mboxes:[{name:'hero',parameters:{x:1}}]}},response:{execute:{pageLoad:{options:[{content:'A',responseTokens:{'activity.id':'1','experience.id':'0'}}]}},prefetch:{mboxes:[{options:[{responseTokens:{'activity.id':'2','experience.id':'1'}}]}]}}})!;
+ const memory=rememberExperiences([],r);assert.equal(memory.length,1);assert.equal(rememberExperiences(memory,r)[0].count,1);
+ const second={...r,page:'https://example.com/b',locations:[{...r.locations[0]!,parameters:['y']}]};
+ const boxes=mboxInventory([r,second]);assert.equal(boxes[0].paramDrift,true);assert.match(inventoryCsv(boxes),/hero/);
+ assert.equal(odeInventory({...r,response:{activities:[{id:'1',name:'One'}]}},[]).activities[0].observed,false);
+});
+import {installTargetCapture,isWire} from '../src/core/adobe-target/capture';
+import {privacySignals} from '../src/core/adobe-target/privacy';
+import {targetCookieIdentity} from '../src/core/adobe-target/qa';
+test('Privacy findings never contain matched values; cookie identity parses encoded Target sessions',()=>{
+ const p=privacySignals({execute:{pageLoad:{profileParameters:{contact:'person@example.com'}}}},{});
+ assert.ok(p.some(p=>p.kind.startsWith('email')));assert.ok(!JSON.stringify(p).includes('person@example.com'));
+ assert.equal(targetCookieIdentity([{name:'mbox',value:'session%23abc%23123%7CPC%23xyz%23456'}]).session,'abc');
+ assert.equal(isWire({schema:'target-wire-v1',locations:[]}),false);
+});
+test('Target fetch capture preserves the response and original promise',async()=>{
+ const events:any[]=[],cleanups:Array<()=>void>=[];
+ const previous={window:(globalThis as any).window,location:(globalThis as any).location,XMLHttpRequest:(globalThis as any).XMLHttpRequest};
+ class Xhr {open(){}send(){}}
+ const response=new Response(JSON.stringify({execute:{pageLoad:{options:[{type:'html',content:'hello',responseTokens:{'activity.id':'1'}}]}}}),{status:200});
+ const promise=Promise.resolve(response);const original=()=>promise;
+ Object.assign(globalThis,{window:{fetch:original},location:{href:'https://example.com/'},XMLHttpRequest:Xhr});
+ try{
+ installTargetCapture({emit:e=>events.push(e),addCleanup:fn=>cleanups.push(fn)} as any,()=>{});
+ assert.equal((globalThis as any).window.fetch('https://example.com/rest/v1/delivery?client=x'),promise);
+ assert.ok((await response.text()).includes('hello'));
+ for(let i=0;i<30&&!events.length;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(events.length,1);assert.equal(events[0].properties.target,true);assert.ok(isWire(events[0].properties));
+ }finally{cleanups.forEach(fn=>fn());Object.assign(globalThis,previous);}
+});
+test('Web SDK ledger recognizes TGT notifications and ignores AJO',async()=>{
+ const r=normalizeWire({url:'https://edge.example.com/ee/v1/interact?configId=abc',page:'https://example.com',at:100,duration:10,status:200,request:{events:[{xdm:{eventType:'decisioning.propositionDisplay',_experience:{decisioning:{propositions:[{id:'p1',scopeDetails:{decisionProvider:'TGT'}},{id:'p2',scopeDetails:{decisionProvider:'AJO'}}],propositionEventType:{display:1}}}}}]}})!;
+ assert.equal(r.target,true);assert.equal((await enrichIntegrity(r)).notices.length,1);
+});
+test('Missing display finding requires explicit render-success plus prefetched credential evidence',async()=>{
+ const r=normalizeWire({url:'https://example.com/rest/v1/delivery?client=x',page:'https://example.com',at:100,duration:10,status:200,response:{prefetch:{mboxes:[{options:[{eventToken:'private',type:'html',content:'hello'}]}]}}})!;
+ const integrity=await enrichIntegrity(r);const records=[{...r,integrity}];
+ assert.ok(!integrityFindings(records,50000).some(f=>f.id==='T30'));
+ assert.ok(integrityFindings(records,50000,[{at:200,page:r.page,served:integrity.served}]).some(f=>f.id==='T30'));
+});

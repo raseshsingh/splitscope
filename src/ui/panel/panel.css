@@ -21,3 +21,6 @@
 .ss-dashboard-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
 .ss-dashboard-actions a{text-decoration:none}
 .ss-detail>.ss-dashboard-actions{padding:10px 0}
+
+.ss-target-nav { flex-wrap: wrap; gap: 4px; }
+.ss-target-nav button { flex: 0 1 auto; }

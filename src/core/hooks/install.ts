@@ -42,9 +42,10 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const adapterById = new Map(adapters.map((adapter) => [adapter.id, adapter]));
 
   const post = (type: 'snapshot' | 'event' | 'status', payload: unknown) => {
+    const targetWire = type === 'event' && (payload as any)?.properties?.schema === 'target-wire-v1';
     if (stopped) return;
-    if (!connected && queued.length < 1000) queued.push({ type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : 200_000, type === 'snapshot' ? 16 : 10) });
-    else window.postMessage({ namespace: '__splitscope__', nonce, type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : 200_000, type === 'snapshot' ? 16 : 10) }, '*');
+    if (!connected && queued.length < 1000) queued.push({ type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : targetWire ? 400_000 : 200_000, type === 'snapshot' ? 16 : targetWire ? 20 : 10) });
+    else window.postMessage({ namespace: '__splitscope__', nonce, type, payload: sanitize(payload, type === 'snapshot' ? 2_000_000 : targetWire ? 400_000 : 200_000, type === 'snapshot' ? 16 : targetWire ? 20 : 10) }, '*');
   };
 
   const emit: HookHelpers['emit'] = (event) => {
@@ -59,7 +60,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       ...event,
       experimentId: event.experimentId ?? (typeof referenceId === 'string' || typeof referenceId === 'number' ? String(referenceId) : undefined),
       variationId: event.variationId ?? (typeof variationId === 'string' || typeof variationId === 'number' ? String(variationId) : undefined),
-      properties: sanitize(event.properties),
+      properties: sanitize(event.properties, (event.properties as any)?.schema === 'target-wire-v1' ? 400_000 : 256_000, (event.properties as any)?.schema === 'target-wire-v1' ? 20 : 14),
       pageUrl: String(sanitize(location.href)),
       caller: event.caller || caller
     };
@@ -193,6 +194,16 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   function handleCommand(message: ReturnType<typeof parseBridgeMessage>): void {
     if (!message || message.type !== 'command' || !message.payload || typeof message.payload !== 'object') return;
     const payload = message.payload as AnyRecord;
+    if (payload.name === 'targetProbe') {
+      const target = (window as any).adobe?.target;
+      const name = typeof payload.mbox === 'string' ? payload.mbox.trim() : '';
+      if (!name || name.length > 250 || typeof target?.getOffers !== 'function') { post('status', { error: 'A valid mbox name and at.js getOffers are required.' }); return; }
+      // Prefetch avoids the automatic execute impression; never apply the returned offer.
+      void Promise.resolve().then(() => target.getOffers({request:{prefetch:{mboxes:[{name,index:0}]}}})).then(response => {
+        emit({platform:'adobe-target', category:'decision', name:'Target mbox probe: '+name, via:'api-call', properties:sanitize(response,400_000)});
+        post('status',{message:'Target probe completed; inspect Events and Target Raw.'});
+      }).catch(error=>post('status',{error:String(error)})); return;
+    }
     if (payload.name === 'captureOptions') { analyticsEnabled = payload.analytics === true; refreshAnalytics(); return; }
     if (payload.name === 'refresh' || payload.name === 'rescan') { publish(); return; }
     if (payload.name === 'stop') { stop(); return; }

@@ -29,7 +29,7 @@ async function mountHarness() {
     return null;
   } };
   window.postMessage = () => {}; window.setInterval = (() => 1) as any; window.clearInterval = () => {};
-  const context = { window, document, chrome: { runtime, storage: { local: { get: async () => saved, set: async (value: any) => { Object.assign(saved, value); } }, onChanged: { addListener() {}, removeListener() {} } } }, location: { href: 'https://www.keurig.com/', origin: 'https://www.keurig.com' }, crypto: webcrypto, URL: TestURL, Blob, Event: window.Event, CustomEvent: window.CustomEvent, AbortController, console, TextEncoder, setTimeout: (callback: any, ms: number) => { const timer = setTimeout(callback, ms); timer.unref(); return timer; }, clearTimeout, requestAnimationFrame: (callback: any) => setTimeout(() => callback(Date.now()), 0), cancelAnimationFrame: clearTimeout, fetch: async () => { fetches++; throw new Error('Stylesheet network request blocked'); }, MutationObserver: window.MutationObserver, HTMLElement: window.HTMLElement, Element: window.Element, Node: window.Node, navigator: { clipboard: { writeText: async (text: string) => { copied.push(text); } } }, getComputedStyle: () => ({}) };
+  const context = { window, document, chrome: { runtime, storage: { local: { get: async () => saved, set: async (value: any) => { Object.assign(saved, value); } }, onChanged: { addListener() {}, removeListener() {} } } }, location: { href: 'https://www.keurig.com/', origin: 'https://www.keurig.com' }, crypto: webcrypto, URL: TestURL, Blob, Event: window.Event, CustomEvent: window.CustomEvent, AbortController, console, TextEncoder, setInterval: (callback: any, ms: number) => { const timer=setInterval(callback,ms); timer.unref?.(); return timer; }, clearInterval, setTimeout: (callback: any, ms: number) => { const timer = setTimeout(callback, ms); timer.unref?.(); return timer; }, clearTimeout, requestAnimationFrame: (callback: any) => setTimeout(() => callback(Date.now()), 0), cancelAnimationFrame: clearTimeout, fetch: async () => { fetches++; throw new Error('Stylesheet network request blocked'); }, MutationObserver: window.MutationObserver, HTMLElement: window.HTMLElement, Element: window.Element, Node: window.Node, navigator: { clipboard: { writeText: async (text: string) => { copied.push(text); } } }, getComputedStyle: () => ({}) };
   await runInNewContext(readFileSync('.output/chrome-mv3/content-scripts/bridge.js', 'utf8'), context);
   return {
     document, runtime, messages, copied, downloads, get shadow() { return shadow; }, get fetches() { return fetches; },
@@ -119,4 +119,19 @@ test('Compiled panel: every main tab, code/raw/targeting/events, search and QA t
   await click(h, 'Workspace'); await click(h, 'Export workspace'); assert.equal(JSON.parse(await h.downloads.at(-1)!.text()).workspace.pinned[0], 'optimizely:e');
   await click(h, 'Clear this workspace'); await click(h, 'Clear workspace'); assert.match(h.shadow.querySelector('.ss-app').textContent, /0 pinned activities/);
   await h.send({ type: 'panel.close' });
+});
+
+test('Target-specific sections all render from captured delivery data', async () => {
+ const h=await mountHarness();const nonce='target-fixture';
+ h.post({namespace:'__splitscope__',nonce,type:'hello'});
+ h.post({namespace:'__splitscope__',nonce,type:'event',payload:{id:'target-wire',t:Date.now(),platform:'adobe-target',category:'network',name:'Target delivery',via:'network',properties:{schema:'target-wire-v1',pipe:'atjs2',url:'https://target.example.com/rest/v1/delivery',page:'https://www.keurig.com/',at:Date.now(),duration:10,status:200,target:true,ajoCount:0,locations:[],request:{},response:{}}}});
+ await h.send({type:'panel.open'});await settle();
+ const button=(name:string)=>[...h.shadow.querySelectorAll('button')].find((b:any)=>b.textContent.trim()===name) as any;
+ button('Target').click();await settle();
+ for(const name of ['Activities','Timeline','Raw','Identity','A4T','Tracking','Timing','Findings','QA','Mboxes','On-device','Memory','Conflicts']){
+  const nav=h.shadow.querySelector('[aria-label="Adobe Target sections"]');assert.ok(nav,name);
+  [...nav.querySelectorAll('button')].find((b:any)=>b.textContent===name)!.click();await settle();
+  assert.doesNotMatch(h.shadow.querySelector('.ss-panel')?.textContent || '',/could not display this page/);assert.ok(h.shadow.querySelector('.ss-panel'),name);
+ }
+ await h.send({type:'panel.close'});
 });

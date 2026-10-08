@@ -15,3 +15,12 @@ export function baselineRules(tabId:number,startId:number,edge=false):any[] {
  if(edge)filters.push('^https?://[^/]+/ee/([^/]+/)?v1/(interact|collect)(\\?|$)');
  return filters.map((regexFilter,index)=>({id:startId+index,priority:1,action:{type:'block'},condition:{tabIds:[tabId],regexFilter,resourceTypes:['xmlhttprequest','script','other']}}));
 }
+export function targetCookieIdentity(cookies:Array<{name:string;value:string}>) {
+ const result:{session?:string;pc?:string;ecid?:string;webSdkCookies:string[];qaCookies:string[]}={webSdkCookies:[],qaCookies:[]};
+ for(const cookie of cookies){let value=cookie.value;try{value=decodeURIComponent(value);}catch{}
+ if(cookie.name==='mbox'){result.session=value.match(/(?:^|\|)session#([^#|]+)/)?.[1];result.pc=value.match(/(?:^|\|)PC#([^#|]+)/)?.[1];}
+ if(/^AMCV_.*@AdobeOrg$/.test(cookie.name))result.ecid=value.match(/(?:^|\|)MCMID\|(\d+)/)?.[1];
+ if(/^kndctr_/.test(cookie.name))result.webSdkCookies.push(cookie.name);
+ if(cookie.name.startsWith('at_preview_')||cookie.name==='at_qa_mode')result.qaCookies.push(cookie.name);
+ }return result;
+}

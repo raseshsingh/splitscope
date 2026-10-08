@@ -1,4 +1,7 @@
-import { targetCommand, clearTargetBlock } from '../src/core/adobe-target/background';
+import { normalizeWire, classifyTarget } from '../src/core/adobe-target/wire';
+import { enrichIntegrity } from '../src/core/adobe-target/integrity';
+import { sanitize } from '../src/core/sanitize';
+import { targetCommand, clearTargetBlock, retainTargetExperience, clearTargetCaptures, captureQaNavigation } from '../src/core/adobe-target/background';
 import { appendJourney, beginJourney, readJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import { identifyEndpoint } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
@@ -38,10 +41,11 @@ export default defineBackground(() => {
     }
     if (message?.type === 'page.event' && tabId != null) {
       const event = message.event;
+      retainTargetExperience(event, tabId, sender.url || sender.tab?.url || '');
       void updateJourney(tabId, journey => { if (!journey.recording || typeof event?.pageUrl !== 'string' || new URL(event.pageUrl).origin !== journey.origin) return false; appendJourney(journey, { id: event.id, t: event.t, type: 'event', name: event.name, url: event.pageUrl, detail: event }); return true; }).catch(error => diagnostic('background', 'Could not save journey event', error));
       return queueTabEventWrite(tabId, message.event);
     }
-    if (message?.type === 'page.clearEvents' && tabId != null) return serialEventWrite(tabId, () => browser.storage.session.remove(`splitscope:events:${tabId}`));
+    if (message?.type === 'page.clearEvents' && tabId != null) return Promise.all([clearTargetCaptures(tabId),serialEventWrite(tabId, () => browser.storage.session.remove(`splitscope:events:${tabId}`))]);
     if (message?.type === 'page.restore' && tabId != null) {
       return browser.storage.local.get('splitscope:settings').then((settings) => {
         if (!(settings['splitscope:settings'] as any)?.keepLog) return { events: [] };
@@ -83,7 +87,7 @@ export default defineBackground(() => {
       try { await browser.scripting.executeScript({ target: { tabId: tab.id }, world: 'ISOLATED', func: showOpenError, args: [EXTENSION_BUILD, errorText(error)] }); } catch { /* Chrome internal pages prohibit injection. */ }
     }
   });
-  browser.tabs.onUpdated.addListener((id, change) => { if (change.status === 'loading') updateBadge(id, 0, false); });
+  browser.tabs.onUpdated.addListener((id, change) => { if(change.url?.includes('at_preview_token='))void captureQaNavigation(change.url).catch(()=>{}); if (change.status === 'loading') updateBadge(id, 0, false); });
 
   browser.commands.onCommand.addListener(async (command) => {
     if (command !== 'toggle-panel') return;
@@ -101,6 +105,7 @@ export default defineBackground(() => {
       if (timer) clearTimeout(timer);
       pendingWrites.delete(writeKey);
     }
+    void clearTargetCaptures(tabId).catch(()=>{});
     void clearTargetBlock(tabId).catch(error => diagnostic('target', 'Could not clear baseline rules', error));
     void serialJourneyWrite(tabId, () => browser.storage.session.remove(`splitscope:journey:${tabId}`));
     void serialEventWrite(tabId, () => browser.storage.session.remove([`splitscope:tab:${tabId}`, `splitscope:events:${tabId}`, `splitscope:panel:${tabId}`, `splitscope:preview:${tabId}`]));
@@ -116,6 +121,16 @@ export default defineBackground(() => {
     }).catch(() => {});
     return undefined;
   }, { urls: ['<all_urls>'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
+  try { browser.webRequest.onCompleted.addListener(details => {
+    if (details.tabId < 0 || details.frameId !== 0 || !['image','ping'].includes(details.type) || classifyTarget(details.url) !== 'analytics') return;
+    void browser.tabs.get(details.tabId).then(async tab => {
+      if (!tab.url) return;
+      const wire = normalizeWire({url:details.url,page:tab.url,at:details.timeStamp,duration:0,status:details.statusCode});
+      if (!wire) return;
+      const properties = sanitize({...wire,integrity:await enrichIntegrity(wire)},100_000);
+      await browser.tabs.sendMessage(details.tabId,{type:'page.networkEvent',event:{id:'target-aa-'+details.requestId,t:details.timeStamp,platform:'adobe-analytics',category:'network',name:'Target inspector · Analytics beacon',via:'network',pageUrl:tab.url,properties}});
+    }).catch(()=>{});
+  },{urls:['<all_urls>']}); } catch (error) { diagnostic('target','Analytics beacon capture unavailable',error); }
   // Register all core listeners before any cosmetic work.
   void Promise.resolve().then(() => browser.action.setIcon({ path: 'icons/idle.png' })).catch(error => diagnostic('background', 'Toolbar icon unavailable', error));
   console.info(`[Splitscope/background v${EXTENSION_BUILD}] Ready`);

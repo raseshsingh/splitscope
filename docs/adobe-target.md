@@ -1,4 +1,4 @@
-# Adobe Target module
+# Adobe Target module — 0.2.0
 
 The supplied six-phase specification is implemented incrementally, with a commit per phase. Adobe Target controls live in the Target section; other platform workflows are unchanged.
 
@@ -22,7 +22,7 @@ Sources (checked October 7, 2026):
 
 ## Phase 2 — findings
 
-Added evidence-indexed delivery, mixed-stack, edge, property, legacy, selector, JSON, redirect and response-metadata findings. Findings describe observations rather than claiming attribution. Session history follows the existing retained-event setting; clearing events clears these derived findings. Missing parent-level tokens are explicitly called out as an alternative to disabled token settings.
+Added evidence-indexed delivery, mixed-stack, edge, property, legacy, selector, JSON, redirect and response-metadata findings. Findings describe observations rather than claiming attribution. Target wire history has a separate per-tab, per-origin session ring (100 captures, approximately 1 MB). Clearing Events also clears this ring; closing the tab removes it. The view combines it with current events and uses the latest 150 captures. Missing parent-level tokens are explicitly called out as an alternative to disabled token settings.
 
 ## Phase 3 — identity and correlation
 
@@ -37,3 +37,27 @@ Baseline mode uses tab-scoped DNR session rules with tab-close cleanup. Optional
 ## Phase 5 — timing and telemetry
 
 Added bounded selector-mutation observation, at-body-style prehide timing, and configuration snapshots. Existing behavior-preserving at.js wrappers are shown alongside timing evidence. Timing measures request-to-observed-mutation, not proven render attribution. The before snapshot is taken when the response is inspected and can miss earlier changes. No guessed Alloy style signature is used.
+
+## Phase 6 — inventory and history
+
+Added mbox schemas with cross-page drift checks and CSV/JSON exports; an explicit prefetch-only mbox probe; defensive ODE activity/rule inspection; bounded, origin-scoped experience history; captured-offer comparisons; and cross-platform selector overlap highlighting. History counts captured decisions rather than visitors or statistical traffic allocation. Arbitrary saved JavaScript is never replayed. Unknown artifact schemas remain available as raw data instead of being guessed.
+
+Additional AppMeasurement image/beacon observation supports A4T where Analytics does not use fetch/XHR. Unknown or missed requests still limit correlation.
+
+
+## Verification and practical limits
+
+- Production build and TypeScript checks pass.
+- Automated coverage includes the compiled background QA save/open/remove and tab-scoped blocking flows, every Target UI section, null background replies, CNAME and AJO separation, A4T matches, Web SDK notifications, privacy signals, cookie parsing, mbox/history fixtures, and fetch response/promise preservation.
+- Browser preview reviewed using clearly labeled sample data. No authenticated Adobe account or live Adobe-generated QA URL was available, so vendor-side QA confirmation and real-site flicker acceptance are not claimed.
+- T30 requires explicit render-success credential evidence linked to a prefetch; it does not assume delivery equals rendering. Unknown tracking remains unknown.
+- QA cookies show their first-observed date, not an unavailable creation date. Saved links are captured from visited URLs or manual paste; only exact saved experience mappings can be opened.
+- Local replay is limited to text on exactly one non-sensitive element. It has undo and does not evaluate saved HTML, CSS or JavaScript. Site observers may still react. DOM captures and offer comparisons are inspectable; screenshot comparisons are not implemented.
+- ODE parsing recognizes exposed activities, metadata and rule trees. Unrecognized artifact schemas remain raw. Oversized captures are marked as limited; the extension cannot recover omitted bytes.
+- Additional permissions: cookies and declarativeNetRequest. Reload the unpacked extension and the website after updating.
+
+Sources for the probe and Web SDK ledger:
+- https://experienceleague.adobe.com/en/docs/target-dev/developer/api/delivery-api/prefetch
+- https://experienceleague.adobe.com/en/docs/experience-platform/collection/use-cases/personalization/display-events
+
+Final verification for 0.2.0: 56 tests passed, 0 failed, 1 optional external Accor engine check skipped. TypeScript and production build passed. Each implementation phase was committed separately. The session-ring and compiled background QA/blocking tests do not require vendor accounts.

@@ -1,3 +1,4 @@
+import { privacySignals } from './privacy';
 import { installTargetTiming } from './timing';
 import { enrichIntegrity } from './integrity';
 import type { HookHelpers } from '../hooks/runtime';
@@ -14,25 +15,34 @@ async function readResponse(response: Response) {
 export function installTargetCapture(helpers: HookHelpers, decision: (data: unknown)=>void) {
   if (typeof window.fetch !== 'function' || typeof XMLHttpRequest === 'undefined') return;
   let alive = true;
+  const pageId=globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const observeTiming=installTargetTiming(helpers);
   const record = async (input: Parameters<typeof normalizeWire>[0]) => {
     if (!alive) return;
     try {
-      const wire = normalizeWire(input); if (!wire) return;
-      observeTiming(wire);
-      if (wire.target && wire.pipe !== 'ode') decision(wire.pipe === 'edge' ? targetPropositions(wire.response).map(p=>({...p, activityId:p.scopeDetails.activity?.id, experienceId:p.scopeDetails.experience?.id})) : wire.response);
-      helpers.emit({platform:wire.target?'adobe-target':wire.pipe==='analytics'?'adobe-analytics':'page', category:'network',name:`Target inspector · ${wire.pipe} · ${wire.status || 'network failure'}`, via:'network', properties:sanitize({...wire, integrity:await enrichIntegrity(wire)},400_000,18)});
+      const wire = normalizeWire({...input,pageId}); if (!wire) return;
+      wire.privacy=privacySignals(wire.request,wire.response);
+      const globalMbox=(window as any).adobe?.target?.settings?.globalMboxName||(window as any).targetGlobalSettings?.globalMboxName;
+      for(const box of wire.locations)if(box.name==='pageLoad')box.name=typeof globalMbox==='string'?globalMbox:'target-global-mbox';
+      if(wire.page===location.href)observeTiming(wire);
+      if (wire.target && wire.pipe !== 'ode' && wire.page === location.href) decision(wire.pipe === 'edge' ? targetPropositions(wire.response).map(p=>({...p, activityId:p.scopeDetails.activity?.id, experienceId:p.scopeDetails.experience?.id})) : wire.response);
+      const integrity=await enrichIntegrity(wire);
+      if (!alive) return;
+      helpers.emit({platform:wire.target?'adobe-target':wire.pipe==='analytics'?'adobe-analytics':'page', category:'network',name:`Target inspector · ${wire.pipe} · ${wire.status || 'network failure'}`, via:'network', properties:sanitize({...Object.fromEntries(Object.entries(wire).filter(([key])=>key!=='request'&&key!=='response')),integrity,request:wire.request,response:wire.response},400_000,18)});
     } catch { /* Observation must not affect delivery. */ }
   };
   const original = window.fetch;
   const wrapped: typeof fetch = function(this: Window, input, init) {
-    const url = new URL(typeof input==='string'||input instanceof URL?String(input):input.url,location.href).href;
-    if (!classifyTarget(url)) return Reflect.apply(original,this,[input,init]);
-    const at=Date.now(), page=location.href;
-    const body = init?.body ?? (input instanceof Request ? undefined : null);
-    const request = input instanceof Request && body===undefined ? readResponse(new Response(input.clone().body)).catch(()=>({captureUnavailable:true})) : Promise.resolve(body);
-    const promise = Reflect.apply(original,this,[input,init]);
-    void promise.then(async response=> { const duration=Date.now()-at; const result=await readResponse(response); record({url,page,at,duration,status:response.status,request:await request,response:result}); },error=>{record({url,page,at,duration:Date.now()-at,status:0,error:String(error),request:body});}).catch(()=>{});
+    let url:string,request:Promise<unknown>;
+    try {
+      url=new URL(typeof input==='string'||input instanceof URL?String(input):input.url,location.href).href;
+      if(!classifyTarget(url))return Reflect.apply(original,this,[input,init]);
+      const body=init?.body;
+      request=body!==undefined?Promise.resolve(body):input instanceof Request?readResponse(new Response(input.clone().body)).catch(()=>({captureUnavailable:true})):Promise.resolve(null);
+    } catch { return Reflect.apply(original,this,[input,init]); }
+    const at=Date.now(),page=location.href;
+    const promise=Reflect.apply(original,this,[input,init]);
+    void promise.then(async response=>{const duration=Date.now()-at;let result:unknown;try{result=await readResponse(response);}catch{result={captureUnavailable:true};}await record({url,page,at,duration,status:response.status,request:await request,response:result});},async error=>{await record({url,page,at,duration:Date.now()-at,status:0,error:String(error),request:await request});}).catch(()=>{});
     return promise;
   };
   window.fetch=wrapped;
@@ -46,4 +56,11 @@ export function installTargetCapture(helpers: HookHelpers, decision: (data: unkn
   XMLHttpRequest.prototype.open=openWrap; XMLHttpRequest.prototype.send=sendWrap;
   helpers.addCleanup(()=>{alive=false;if(window.fetch===wrapped)window.fetch=original;if(XMLHttpRequest.prototype.open===openWrap)XMLHttpRequest.prototype.open=open;if(XMLHttpRequest.prototype.send===sendWrap)XMLHttpRequest.prototype.send=send;});
 }
-export function isWire(value: any): value is TargetWire { return value?.schema==='target-wire-v1' && Array.isArray(value.locations); }
+export function isWire(value: any): value is TargetWire {
+ if(value?.schema!=='target-wire-v1'||!['atjs1','atjs2','edge','ode','analytics'].includes(value.pipe)||typeof value.url!=='string'||typeof value.page!=='string'||!Number.isFinite(value.at)||!Number.isFinite(value.duration)||!Number.isFinite(value.status)||!Array.isArray(value.locations))return false;
+ try{new URL(value.url);}catch{return false;}
+ if(!value.locations.every((l:any)=>l&&typeof l.name==='string'&&typeof l.phase==='string'&&Array.isArray(l.parameters)&&l.parameters.every((k:any)=>typeof k==='string')&&Array.isArray(l.profile)&&l.profile.every((k:any)=>typeof k==='string')))return false;
+ const i=value.integrity;
+ if(i&&(!Array.isArray(i.served)||!Array.isArray(i.notices)||!i.identity||!Array.isArray(i.identity.customers)||!i.served.every((s:any)=>s&&typeof s.ref==='string')||!i.notices.every((n:any)=>n&&typeof n.ref==='string')))return false;
+ return true;
+}

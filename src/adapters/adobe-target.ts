@@ -1,3 +1,5 @@
+import { enrichIntegrity } from '../core/adobe-target/integrity';
+import type { TargetWire } from '../core/adobe-target/wire';
 import { installTargetCapture } from '../core/adobe-target/capture';
 import { mergeChanges } from '../core/changes';
 import { activityKind } from '../core/activity-kind';
@@ -113,6 +115,10 @@ export const adobeTargetAdapter: PageAdapter = {
       helpers.listen(name, event => {
         if (page !== location.href) { page = location.href; pending.clear(); latest.clear(); }
         const detail = (event as CustomEvent).detail;
+        if(name==='at-content-rendering-succeeded'){
+          const at=Date.now(),page=location.href;
+          void enrichIntegrity({response:detail,request:{}} as TargetWire).then(integrity=>{if(integrity.served.length)helpers.emit({platform:'adobe-target',category:'lifecycle',name:'Target rendered credential evidence',via:'listener',properties:{schema:'target-render-v1',at,page,served:integrity.served}});}).catch(()=>{});
+        }
         const evidence: Evidence = name === 'at-content-rendering-succeeded' || name === 'at-content-rendering-redirect' ? 'rendered' : name.includes('failed') || name.endsWith('no-offers') ? 'failed' : 'delivered';
         const activities = readTargetActivities(detail, evidence);
         const key = detail?.requestId ? `request:${detail.requestId}` : detail?.mbox ? `mbox:${detail.mbox}` : undefined;

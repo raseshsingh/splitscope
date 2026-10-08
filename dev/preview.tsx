@@ -1,3 +1,5 @@
+import { normalizeWire } from '../src/core/adobe-target/wire';
+import { enrichIntegrity } from '../src/core/adobe-target/integrity';
 import { variationChanges } from '../src/core/changes';
 import { readTargetActivities } from '../src/adapters/adobe-target';
 import { emptyWorkspace } from '../src/core/qa/workspace';
@@ -16,6 +18,8 @@ const state = signal({ ...emptyPageState('https://example.com/shop'), page: { ti
 ], events: [{ id: 'one', t: Date.now(), platform: 'optimizely', name: 'add_to_cart', category: 'custom', via: 'api-call', properties: { product: { id: 'SKU-108', name: 'Everyday tote' }, quantity: 1, revenue: 4900 }, pageUrl: 'https://example.com/shop' }, { id: 'two', t: Date.now() - 1000, platform: 'page', name: 'Route /shop', category: 'pageview', via: 'listener', properties: { path: '/shop' } }] } as any);
 const targetActivities = readTargetActivities({ execute: { pageLoad: { options: [{ type: 'html', content: '<script>\n  window.targetExample = "Experience C";\n</script>\n<div class="target-offer">Welcome back</div>', responseTokens: { 'activity.id': '831395', 'activity.name': 'Homepage welcome offer', 'activity.type': 'xt', 'experience.id': '2', 'experience.name': 'Experience C' } }] } } }, 'delivered');
 state.value = { ...state.value, experiments: [...state.value.experiments, ...targetActivities], platforms: [...state.value.platforms, { id: 'adobe-target', displayName: 'Adobe Target', result: { state: 'active', confidence: 1, signals: ['Sample Target offer'] }, capabilities: { listAll: 'partial', forceVariation: 'none', events: true, changes: 'partial', notes: {} } }] };
+const wire = normalizeWire({url:'https://target.example.com/rest/v1/delivery?client=example&sessionId=sample-session',page:'https://example.com/shop',at:Date.now()-10000,duration:185,status:200,request:{execute:{pageLoad:{parameters:{pageType:'shop'}}},id:{marketingCloudVisitorId:'sample-ecid'},experienceCloud:{analytics:{logging:'server_side'}}},response:{execute:{pageLoad:{options:[{type:'html',content:'<div class="target-offer">Welcome back</div>',responseTokens:{'activity.id':'831395','activity.name':'Homepage welcome offer','experience.id':'2','experience.name':'Experience C'}}]}}}})!;
+state.value = {...state.value,events:[...state.value.events,{id:'target-wire-example',t:Date.now(),platform:'adobe-target',category:'network',name:'Target inspector · atjs2 · 200',via:'network',properties:{...wire,integrity:await enrichIntegrity(wire)}}]};
 const settings = signal(defaultSettings);
 const workspace = signal(emptyWorkspace());
 const expectations = signal<EventExpectation[]>([]);

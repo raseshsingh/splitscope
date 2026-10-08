@@ -7,7 +7,7 @@ export function timingMetrics(start:number,response:number,mutation:number,prehi
 export function installTargetTiming(helpers:HookHelpers) {
  if(typeof MutationObserver==='undefined')return (_:TargetWire)=>{};
  let prehideStart:number|undefined,prehideEnd:number|undefined,hadPrehide=false;
- const pending=new Map<string,{start:number;response:number;before:string}>();
+ const pending=new Map<string,{start:number;response:number;before:string;page:string}>();
  const emit=(name:string,properties:any)=>helpers.emit({platform:'adobe-target',category:'lifecycle',name,via:'listener',properties:sanitize(properties,200_000)});
  const checkPrehide=()=>{
  const present=!!document.getElementById('at-body-style');
@@ -18,7 +18,7 @@ export function installTargetTiming(helpers:HookHelpers) {
  const observer=new MutationObserver(mutations=>{
  checkPrehide();let checked=0;
  for(const [selector,watch] of pending){
- if(Date.now()-watch.response>30000){pending.delete(selector);continue;}
+ if(watch.page!==location.href||Date.now()-watch.response>30000){pending.delete(selector);continue;}
  try{
  const nodes=[...document.querySelectorAll(selector)].slice(0,50);
  const touched=mutations.slice(0,100).some(m=>nodes.some(node=>{if(++checked>5000)return false;return node===m.target||node.contains(m.target)||Array.from(m.addedNodes).some(added=>added===node||added.contains(node));}));
@@ -31,13 +31,13 @@ export function installTargetTiming(helpers:HookHelpers) {
  const captureConfig=()=>{
  const target=(window as any).adobe?.target;const settings=target?.settings||(window as any).targetGlobalSettings;
  if(!target&&!settings)return;
- const config={version:target?.VERSION,clientCode:settings?.clientCode,globalMboxName:settings?.globalMboxName,timeout:settings?.timeout,decisioningMethod:settings?.decisioningMethod,bodyHiddenStyle:settings?.bodyHiddenStyle};
+ const config={hasGetOffers:typeof target?.getOffers==='function',version:target?.VERSION,clientCode:settings?.clientCode,globalMboxName:settings?.globalMboxName,timeout:settings?.timeout,decisioningMethod:settings?.decisioningMethod,bodyHiddenStyle:settings?.bodyHiddenStyle};
  const next=JSON.stringify(config);if(next!==last){last=next;emit('Target configuration observed',{schema:'target-config-v1',config});}
  };
  captureConfig();const timer=setInterval(captureConfig,2000);
  helpers.addCleanup(()=>{observer.disconnect();clearInterval(timer);pending.clear();});
  return (r:TargetWire)=>{
  if(!r.target||r.pipe==='ode')return;
- walk(r.response,node=>{const selector=node.cssSelector||node.selector;if(typeof selector!=='string'||selector.length>2000||pending.size>=100)return;try{pending.set(selector,{start:r.at,response:Date.now(),before:document.querySelector(selector)?.outerHTML.slice(0,12000)||''});}catch{}});
+ walk(r.response,node=>{const selector=node.cssSelector||node.selector;if(typeof selector!=='string'||selector.length>2000||pending.size>=100)return;try{pending.set(selector,{page:r.page,start:r.at,response:Date.now(),before:document.querySelector(selector)?.outerHTML.slice(0,12000)||''});}catch{}});
  };
 }

@@ -1054,3 +1054,7 @@ Sizes are relative (S, M, L) so the plan stays useful whatever the team size or 
 **OneSignal**
 * Web SDK reference (v16): https://documentation.onesignal.com/docs/web-sdk-reference
 * Player model to user model mapping: https://documentation.onesignal.com/docs/device-user-model-web-sdk-mapping
+
+## Adobe Target enhancement implementation — October 8, 2026
+
+The supplied Adobe-only expansion is documented in `docs/adobe-target.md`, including corrections to tracking and QA assumptions, six implementation phases, verification scope, permissions, and capture limits. It adds a dedicated Target workspace; other vendor capabilities remain separate. Automatic activity-specific dashboard links are documented in `docs/dashboard-links.md`.
