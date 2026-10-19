@@ -1,6 +1,6 @@
 {
   "name": "splitscope",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,11 @@
     "build": "wxt build -b chrome",
     "zip": "wxt zip -b chrome",
     "postinstall": "wxt prepare",
-    "test": "npm run build && tsx --test tests/*.test.ts"
+    "typecheck": "tsc --noEmit -p .",
+    "test": "npm run test:unit",
+    "test:unit": "tsx --test tests/*.test.ts",
+    "test:bundle": "npm run build && tsx --test tests/bundle/*.test.ts",
+    "check": "npm run typecheck && npm run test:unit && npm run test:bundle"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",

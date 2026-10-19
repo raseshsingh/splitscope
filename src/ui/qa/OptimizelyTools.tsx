@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { PageState } from '../../core/state';
 import type { Workspace } from '../../core/qa/workspace';
 import { evaluateAudiences, pageAudienceEnv, type AttributeValues, type ConditionNode, type Tri } from '../../core/optimizely/audiences';
-import { CopyButton, Empty } from '../shared/components';
+import { CopyButton, Empty, Tabs } from '../shared/components';
 import ConfirmModal from '../shared/ConfirmModal';
 
 export type PlatformAction = (platform: string, action: string, args?: Record<string, unknown>) => Promise<any>;
@@ -82,7 +82,7 @@ export default function OptimizelyTools({ state, onAction, workspace, onRevision
   if (!onAction) return <Empty title="Needs the installed extension">Optimizely tools talk to the page through the extension, so they are not available in this preview.</Empty>;
   const defined = (info?.attributes || []).filter((item: any) => item.defined);
   return <section class="ss-stack ss-opt">
-    <nav class="ss-tabs" aria-label="Optimizely tools">{sections.map(([id, label]) => <button key={id} class={section === id ? 'ss-selected' : ''} aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>)}</nav>
+    <Tabs label="Optimizely tools" items={sections} value={section} onChange={setSection} />
     {error && <p class="ss-note ss-note-err" role="alert">{error}</p>}
 
     {section === 'visitor' && <>

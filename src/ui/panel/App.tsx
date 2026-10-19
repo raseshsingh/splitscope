@@ -1,4 +1,5 @@
 import TargetView, { type TargetGroup } from './TargetView';
+import { shortcutIntent } from './shortcuts';
 import { useTargetData } from './target-data';
 import { DashboardLink } from './DashboardLink';
 import ActivityDetail from './ActivityDetail';
@@ -51,6 +52,21 @@ export default function App(props: Props) {
   const [targetGroup, setTargetGroup] = useState<{ group?: TargetGroup; request: number }>({ request: 0 });
   const [checkDraft, setCheckDraft] = useState<CheckDraft | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Settings is a modal dialog: focus moves in when it opens, Tab stays inside, and focus returns to the opener on close.
+  const drawer = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (settingsOpen) { opener.current = (root.current?.getRootNode() as Document | ShadowRoot | undefined)?.activeElement as HTMLElement | null; queueMicrotask(() => drawer.current?.querySelector<HTMLElement>('button,[href],input,select,textarea')?.focus()); }
+    else if (opener.current) { opener.current.focus?.(); opener.current = null; }
+  }, [settingsOpen]);
+  const trapFocus = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab' || !drawer.current) return;
+    const items = [...drawer.current.querySelectorAll<HTMLElement>('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')];
+    if (!items.length) return;
+    const active = (drawer.current.getRootNode() as Document | ShadowRoot).activeElement;
+    if (event.shiftKey && active === items[0]) { event.preventDefault(); items.at(-1)!.focus(); }
+    else if (!event.shiftKey && active === items.at(-1)) { event.preventDefault(); items[0]!.focus(); }
+  };
   const [localWorkspace, setLocalWorkspace] = useState(emptyWorkspace);
   const workspace = props.workspace?.value || localWorkspace;
   const updateWorkspace = (patch: Partial<Workspace>) => { const value = { ...(props.workspace?.value || localWorkspace), ...patch }; if (props.onWorkspace) props.onWorkspace(value); else setLocalWorkspace(value); };
@@ -89,11 +105,14 @@ export default function App(props: Props) {
   const setSettings = (patch: Partial<Settings>) => props.onSettings?.({ ...settings, ...patch });
   const highlight = (selector: string) => { const result = highlightSelector(selector); setNotice(result.error || (result.count ? result.count + (result.count === 1 ? ' matching element' : ' matching elements') + ' outlined for 5 seconds (up to 100).' : 'No elements match this selector on the current page.')); };
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === 'Escape') { if (proposal) setProposal(null); else if (settingsOpen) setSettingsOpen(false); else if (tab === 'activities' && selected) setSelected(null); else setMinimized(true); event.stopPropagation(); }
-    if ((event.target as HTMLElement)?.closest('input,textarea,select,[contenteditable]')) return;
-    if (event.key === '/') { event.preventDefault(); root.current?.querySelector<HTMLInputElement>('input[type="search"],.ss-search input')?.focus(); }
-    const index = Number(event.key) - 1; if (index >= 0 && index <= 3) changeTab((['activities', 'events', 'page', 'tools'] as PanelTab[])[index]!);
+    if (event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    const intent = shortcutIntent(event.key, { modifier: event.altKey || event.ctrlKey || event.metaKey, inDialog: !!target?.closest?.('dialog'), inField: !!target?.closest?.('input,textarea,select,[contenteditable]'), settingsOpen });
+    if (intent.kind === 'blur' || intent.kind === 'escape') event.stopPropagation();
+    if (intent.kind === 'blur') target?.blur();
+    else if (intent.kind === 'escape') { if (proposal) setProposal(null); else if (settingsOpen) setSettingsOpen(false); else if (tab === 'activities' && selected) setSelected(null); else setMinimized(true); }
+    else if (intent.kind === 'search') { event.preventDefault(); root.current?.querySelector<HTMLInputElement>('input[type="search"],.ss-search input')?.focus(); }
+    else if (intent.kind === 'section') changeTab((['activities', 'events', 'page', 'tools'] as PanelTab[])[intent.index]!);
   };
   const pause = () => { if (!paused && check && !check.endedAt) setCheck({ ...check, interrupted: true }); props.onPauseEvents(!paused); setPaused(!paused); };
   const clear = () => { if (props.onClearEvents) props.onClearEvents(); else state.value = { ...state.value, events: [] }; };
@@ -112,10 +131,10 @@ export default function App(props: Props) {
   const tabLabel = (name: PanelTab) => name === 'activities' ? 'Activities' : name.charAt(0).toUpperCase() + name.slice(1);
   const preview = current.preview; const previewObserved = !!preview && previewOutcome(preview, current.experiments) === 'Requested assignment observed';
   return <div ref={root} class={'ss-app ss-panel ss-dock-' + settings.dock} data-theme={settings.theme} data-text-size={settings.textSize} onKeyDown={onKeyDown}>
-    <header class="ss-header"><Brand version={EXTENSION_BUILD} /><div class="ss-actions"><IconButton icon="dock-right" label="Dock right" on={settings.dock === 'right'} onClick={() => setSettings({ dock: 'right' })} /><IconButton icon="dock-bottom" label="Dock bottom" on={settings.dock === 'bottom'} onClick={() => setSettings({ dock: 'bottom' })} /><IconButton icon="gear" label="Settings" on={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)} /><IconButton icon="minus" label="Minimize panel" onClick={() => setMinimized(true)} /><IconButton icon="close" label="Close panel" onClick={props.onClose} /></div></header>
-    <div class="ss-platform-strip" aria-label="Detected platforms"><span class="ss-lbl">{current.platforms.length ? 'Detected' : 'No platform detected'}</span>{current.platforms.map(item => <button class={'ss-chip' + (platform === item.id ? ' ss-on' : '')} key={item.id} aria-pressed={platform === item.id} title="Filter activities by this platform" onClick={() => { updateWorkspace({ platform: platform === item.id ? 'all' : item.id, selected: null, scope: 'all', query: '', kind: 'all' }); setSettingsOpen(false); setTab('activities'); }}><PlatformDot platform={item.id} />{item.displayName}</button>)}</div>
-    {preview && <div class={'ss-banner' + (previewObserved ? ' ss-ok' : '')} role="status"><Icon name={previewObserved ? 'check' : 'eye'} size={15} /><span><b>Preview: {preview.variation}.</b> {previewOutcome(preview, current.experiments)}{preview.persistent ? ' This platform may keep the assignment in visitor storage; use the vendor QA controls to restore it.' : ''}</span><button class="ss-button ss-small" onClick={props.onResetPreview}>{preview.persistent ? 'Remove preview parameters & dismiss' : 'Reset my preview'}</button></div>}
-    <main class="ss-main">
+    <header class="ss-header" inert={settingsOpen}><Brand version={EXTENSION_BUILD} /><div class="ss-actions"><IconButton icon="dock-right" label="Dock right" on={settings.dock === 'right'} onClick={() => setSettings({ dock: 'right' })} /><IconButton icon="dock-bottom" label="Dock bottom" on={settings.dock === 'bottom'} onClick={() => setSettings({ dock: 'bottom' })} /><IconButton icon="gear" label="Settings" on={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)} /><IconButton icon="minus" label="Minimize panel" onClick={() => setMinimized(true)} /><IconButton icon="close" label="Close panel" onClick={props.onClose} /></div></header>
+    <div class="ss-platform-strip" aria-label="Detected platforms" inert={settingsOpen}><span class="ss-lbl">{current.platforms.length ? 'Detected' : 'No platform detected'}</span>{current.platforms.map(item => <button class={'ss-chip' + (platform === item.id ? ' ss-on' : '')} key={item.id} aria-pressed={platform === item.id} title="Filter activities by this platform" onClick={() => { updateWorkspace({ platform: platform === item.id ? 'all' : item.id, selected: null, scope: 'all', query: '', kind: 'all' }); setSettingsOpen(false); setTab('activities'); }}><PlatformDot platform={item.id} />{item.displayName}</button>)}</div>
+    {preview && <div class={'ss-banner' + (previewObserved ? ' ss-ok' : '')} role="status" inert={settingsOpen}><Icon name={previewObserved ? 'check' : 'eye'} size={15} /><span><b>Preview: {preview.variation}.</b> {previewOutcome(preview, current.experiments)}{preview.persistent ? ' This platform may keep the assignment in visitor storage; use the vendor QA controls to restore it.' : ''}</span><button class="ss-button ss-small" onClick={props.onResetPreview}>{preview.persistent ? 'Remove preview parameters & dismiss' : 'Reset my preview'}</button></div>}
+    <main class="ss-main" inert={settingsOpen}>
       {lost && <section class="ss-card ss-lost"><h2>{health!.background === 'unavailable' ? 'Lost connection to the extension' : 'This page needs a reload'}</h2><p class="ss-muted">{health!.background === 'unavailable' ? 'The extension background stopped responding. This can happen after an update.' : 'This page is running an older capture script, usually after the extension updated.'}</p><ol class="ss-steps">{health!.background === 'unavailable' && <li>Reload Splitscope in chrome://extensions</li>}<li>Reload this website tab</li><li>Open Splitscope again</li></ol><div class="ss-actions"><CopyButton label="Copy diagnostics" value={'Splitscope ' + EXTENSION_BUILD + ' | ' + connectionLabel(current) + ' | ' + hostname} /><button class="ss-button" onClick={onRescan}><Icon name="refresh" size={13} />Retry</button></div></section>}
       {targetBlocked && <div class="ss-notice">Adobe Target baseline mode is enabled in this tab. <button class="ss-link" onClick={() => openTarget('QA')}>Manage blocking</button></div>}
       {tab === 'activities' && selected && targetTools}
@@ -142,8 +161,8 @@ export default function App(props: Props) {
         {(currentTool === 'report' || currentTool === 'compare' || currentTool === 'overlap') && <ToolsView section={currentTool} state={current} notes={notes} setNotes={setNotes} baseline={baseline} setBaseline={setBaseline} onHighlight={highlight} baselineMeta={workspace.baseline} />}
       </>}
     </main>
-    <nav class="ss-nav" aria-label="Inspector sections" onKeyDown={(e: KeyboardEvent) => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]!; e.preventDefault(); changeTab(next); queueMicrotask(() => ((e.currentTarget as HTMLElement).querySelector('button.ss-selected') as HTMLElement | null)?.focus()); }}>{tabs.map((name, index) => <button key={name} aria-current={tab === name && !settingsOpen ? 'page' : undefined} class={tab === name ? 'ss-selected' : ''} onClick={() => changeTab(name)}><Icon name={name === 'activities' ? 'activity' : name} size={18} /><span class="ss-nav-label">{tabLabel(name)}{name === 'activities' && current.platforms.length > 0 && <b class="ss-count">{active}</b>}{name === 'events' && <b class="ss-count" title={`${businessCount} goals and custom events, ${current.events.length} in total`}>{businessCount}</b>}</span><small aria-hidden="true">{index + 1}</small></button>)}</nav>
-    {settingsOpen && <div class="ss-drawer" role="dialog" aria-label="Settings"><div class="ss-drawer-top"><IconButton icon="back" label="Close settings" onClick={() => setSettingsOpen(false)} /><strong>Settings</strong></div><div class="ss-drawer-body"><SettingsView state={current} settings={settings} onChange={setSettings} onClearWorkspace={() => { updateWorkspace(emptyWorkspace()); props.onExpectations?.([]); setNotice('Site workspace cleared'); }} onStorage={props.onStorage} /></div></div>}
+    <nav class="ss-nav" aria-label="Inspector sections" inert={settingsOpen} onKeyDown={(e: KeyboardEvent) => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]!; e.preventDefault(); changeTab(next); queueMicrotask(() => ((e.currentTarget as HTMLElement).querySelector('button.ss-selected') as HTMLElement | null)?.focus()); }}>{tabs.map((name, index) => <button key={name} aria-current={tab === name && !settingsOpen ? 'page' : undefined} class={tab === name ? 'ss-selected' : ''} onClick={() => changeTab(name)}><Icon name={name === 'activities' ? 'activity' : name} size={18} /><span class="ss-nav-label">{tabLabel(name)}{name === 'activities' && current.platforms.length > 0 && <b class="ss-count">{active}</b>}{name === 'events' && <b class="ss-count" title={`${businessCount} goals and custom events, ${current.events.length} in total`}>{businessCount}</b>}</span><small aria-hidden="true">{index + 1}</small></button>)}</nav>
+    {settingsOpen && <div class="ss-drawer" role="dialog" aria-modal="true" aria-label="Settings" ref={drawer} onKeyDown={trapFocus}><div class="ss-drawer-top"><IconButton icon="back" label="Close settings" onClick={() => setSettingsOpen(false)} /><strong>Settings</strong></div><div class="ss-drawer-body"><SettingsView state={current} settings={settings} onChange={setSettings} onClearWorkspace={() => { updateWorkspace(emptyWorkspace()); props.onExpectations?.([]); setNotice('Site workspace cleared'); }} onStorage={props.onStorage} /></div></div>}
     {notice && <button class="ss-toast" role="status" onClick={() => setNotice('')}>{notice}</button>}
     {proposal && <ConfirmDialog proposal={proposal} onClose={() => setProposal(null)} onConfirm={(target) => { props.onForceExecute(proposal.plan, target, proposal.request); setProposal(null); }} />}
   </div>;

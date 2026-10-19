@@ -1,2 +1,0 @@
-@import '../../src/ui/shared/theme.css';
-body{margin:0}.ss-options{min-height:100vh;padding:48px 24px}.ss-options-inner{max-width:680px;margin:auto}.ss-options .ss-brand{margin-bottom:44px}.ss-options h1{font-size:32px;letter-spacing:-.8px;margin:10px 0}.ss-options .ss-card{margin-top:22px}.ss-options .ss-setting>span{max-width:450px}.ss-options kbd{font:12px 'Atkinson Hyperlegible Mono',monospace;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface)}

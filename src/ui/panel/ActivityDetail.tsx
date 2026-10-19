@@ -6,7 +6,7 @@ import type { PageState } from '../../core/state';
 import { activityDetails } from '../../core/qa/activity-details';
 import { activityEvents, activityStatus, goalHits, isActive, kindNames, platformNames, pretty } from '../../core/qa/presentation';
 import { EventRow } from '../events/EventFeed';
-import { CopyButton, Empty, Icon, JsonTree, PlatformDot, Status } from '../shared/components';
+import { CopyButton, Empty, Icon, JsonTree, PlatformDot, Status, Tabs } from '../shared/components';
 import EventFeed from '../events/EventFeed';
 
 const valueKinds = ['feature-flag', 'configuration', 'layer'];
@@ -58,11 +58,7 @@ export default function ActivityDetail({ onPin, pinned, activity, state, onBack,
     <div class="ss-inline"><Status status={activity.status} label={activityStatus(activity)} /><CopyButton value={activity.id} label="Copy ID" /></div>
     <p class="ss-caption ss-muted"><button class="ss-link" onClick={onPin}>{pinned ? 'Unpin activity' : 'Pin activity'}</button> · Activity {activity.id}{activity.campaignId ? ' · Campaign ' + activity.campaignId : ''}</p>
 
-    <nav class="ss-detail-nav" aria-label="Activity details">
-      {details.tabs.map((name) => <button key={name} class={tab === name ? 'ss-selected' : ''} aria-current={tab === name ? 'page' : undefined} onClick={() => setTab(name)}>
-        {tabLabels[name] || name}{name === 'events' && ' ' + (related.length + grouped.metric.length)}
-      </button>)}
-    </nav>
+    <Tabs className="ss-detail-nav" label="Activity details" value={tab} onChange={setTab} items={details.tabs.map(name => [name, <>{tabLabels[name] || name}{name === 'events' && ' ' + (related.length + grouped.metric.length)}</>])} />
 
     {tab === 'overview' && <>
       <div class="ss-explanation"><Icon name="target" /><div>

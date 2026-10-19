@@ -3,7 +3,7 @@ import TargetQa from './TargetQa';
 import { a4tMatrix, type EnrichedWire } from '../../core/adobe-target/integrity';
 import { useState, useEffect } from 'preact/hooks';
 import type { PageState } from '../../core/state';
-import { CopyButton, Disclosure, Empty, JsonTree } from '../shared/components';
+import { CopyButton, Disclosure, Empty, JsonTree, Tabs } from '../shared/components';
 import type { TargetData } from './target-data';
 export type TargetGroup = 'Overview' | 'QA' | 'Delivery' | 'Tracking';
 /** Twelve views grouped by the question they answer, so the tool never shows a wall of chips. */
@@ -44,7 +44,7 @@ export default function TargetView({ state, onAction, data, initialGroup, groupR
   for (const r of records) for (const item of r.integrity?.served || []) { const prior = tracked.get(item.ref); tracked.set(item.ref, { kind: item.kind, seen: (prior?.seen || 0) + 1 }); }
   return <section class="ss-target">
     <p class="ss-caption ss-muted">Observed delivery and decisions. Captures begin when the extension connects; unavailable response fields cannot be inferred. This view uses the latest 150 retained wire captures.</p>
-    <div class="ss-tabs ss-target-groups" role="group" aria-label="Adobe Target area">{(Object.keys(targetGroups) as TargetGroup[]).map(name => <button key={name} class={group === name ? 'ss-selected' : ''} aria-pressed={group === name} onClick={() => setTab(firstView(name))}>{name}{name === 'Overview' && findings.length > 0 && <span class="ss-count">{findings.length}</span>}</button>)}</div>
+    <Tabs className="ss-tabs ss-target-groups" label="Adobe Target area" value={group} onChange={name => setTab(firstView(name))} items={(Object.keys(targetGroups) as TargetGroup[]).map(name => [name, <>{name}{name === 'Overview' && findings.length > 0 && <span class="ss-count">{findings.length}</span>}</>])} />
     <div class="ss-chips" role="group" aria-label="Adobe Target tool">{targetGroups[group].map(name => <button key={name} class={tab === name ? 'ss-selected' : ''} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
     <div class="ss-tags">{[...new Set(targetRecords.map(r => r.client).filter(Boolean))].map(client => <span class="ss-tag" key={client as string}>{client}</span>)}{[...new Set(targetRecords.map(r => r.pipe))].map(pipe => <span class="ss-tag" key={pipe}>{pipe}</span>)}{records.some(r => r.integrity?.qaActive) && <span class="ss-tag ss-tag-warn">QA observed</span>}</div>
     {['Mboxes', 'On-device', 'Memory', 'Conflicts'].includes(tab) && <TargetInventory tab={tab} state={state} records={records} onAction={onAction} />}

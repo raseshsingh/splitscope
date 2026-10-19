@@ -38,3 +38,22 @@ export function Disclosure({ title, meta, children, defaultOpen = false }: { tit
   const [open, setOpen] = useState(defaultOpen);
   return <section class="ss-disclosure"><button class="ss-disclosure-toggle" aria-expanded={open} onClick={() => setOpen(!open)}><span><strong>{title}</strong>{meta && <small>{meta}</small>}</span><span class={open ? 'ss-chevron ss-open' : 'ss-chevron'}><Icon name="arrow" size={15} /></span></button>{open && <div class="ss-disclosure-body">{children}</div>}</section>;
 }
+/**
+ * One tab strip for the whole panel: role="tablist", the selected tab in the Tab order, and
+ * Arrow, Home and End keys move between tabs. `items` are [value, label] pairs.
+ */
+export function Tabs<T extends string>({ label, items, value, onChange, className = 'ss-tabs' }: { label: string; items: Array<[T, ComponentChildren]>; value: T; onChange: (value: T) => void; className?: string }) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+    if (!keys.includes(event.key) || !items.length) return;
+    event.preventDefault();
+    const index = Math.max(0, items.findIndex(([item]) => item === value));
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length;
+    onChange(items[next]![0]);
+    const strip = event.currentTarget as HTMLElement;
+    queueMicrotask(() => strip.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+  };
+  return <div class={className} role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+    {items.map(([item, text]) => <button key={item} type="button" role="tab" class={item === value ? 'ss-selected' : ''} aria-selected={item === value} tabIndex={item === value ? 0 : -1} onClick={() => onChange(item)}>{text}</button>)}
+  </div>;
+}

@@ -4,12 +4,11 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: [],
   vite: () => ({ plugins: [preact()], build: { minify: false, sourcemap: true } }),
-  hooks: { 'build:manifestGenerated': (_wxt, manifest) => { if (manifest.action) delete manifest.action.default_popup; delete manifest.options_ui; delete manifest.options_page; } },
   manifest: {
     action: { default_title: 'Splitscope — open page inspector', default_icon: 'icons/idle.png' },
     name: 'Splitscope',
     description: 'Inspect experiments, variations, and platform events on the page.',
-    version: '0.9.0',
+    version: '0.10.0',
     minimum_chrome_version: '116',
     permissions: ['storage', 'scripting', 'webRequest', 'cookies', 'declarativeNetRequest'],
     host_permissions: ['<all_urls>'],

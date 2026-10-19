@@ -29,7 +29,6 @@
 .ss-target-tool-picker { display:flex; align-items:center; gap:12px; margin:12px 0; }
 .ss-target-tool-picker select { flex:1; min-width:0; }
 
-.ss-file{cursor:pointer}.ss-file:focus-within{outline:2px solid var(--brand);outline-offset:3px}
 
 /* ===== Screen atlas alignment (0.4.0) ===== */
 .ss-panel{border-radius:12px}
@@ -53,13 +52,13 @@
 .ss-nav{border-top:1px solid var(--border);border-bottom:0;padding:0}
 .ss-nav button{flex-direction:column;gap:1px;padding:7px 2px 6px;border-bottom:0;border-top:2px solid transparent;margin-top:-1px;font-size:11.5px}
 .ss-nav button.ss-selected{border-top-color:var(--brand);border-bottom-color:transparent}
-.ss-nav small{font:500 9.5px 'Atkinson Hyperlegible Mono',ui-monospace,monospace;opacity:.6;font-size:10px}
+.ss-nav small{font:500 9.5px 'Atkinson Hyperlegible Mono',ui-monospace,monospace;font-size:10px}
 .ss-nav-label{display:inline-flex;align-items:center;gap:5px}
-.ss-nav .ss-count{background:transparent;padding:0;font-weight:500;font-size:10.5px;opacity:.75}
+.ss-nav .ss-count{background:transparent;padding:0;font-weight:500;font-size:10.5px}
 .ss-segmented{background:var(--sunk);border-radius:8px;padding:2px;gap:2px;margin:10px 0;border:0}
 .ss-segmented button{border-radius:6px;padding:4px 6px;font-size:12px}
 .ss-segmented button.ss-selected{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px #0002;font-weight:500}
-.ss-segmented button span{font:500 10.5px 'Atkinson Hyperlegible Mono',ui-monospace,monospace;opacity:.65;margin-left:3px}
+.ss-segmented button span{font:500 10.5px 'Atkinson Hyperlegible Mono',ui-monospace,monospace;margin-left:3px}
 .ss-tag,.ss-status{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 7px;border-radius:5px;background:var(--sunk);color:var(--muted);white-space:nowrap}
 .ss-tag-ok,.ss-status-running-in{background:var(--green-bg);color:var(--green)}
 .ss-tag-warn,.ss-status-running-excluded,.ss-status-preview{background:var(--amber-bg);color:var(--amber)}
@@ -142,7 +141,7 @@
 .ss-sub{font-size:11.5px;color:var(--muted)}
 .ss-note-info{background:var(--info-bg);color:var(--info)}.ss-note-warn{background:var(--amber-bg);color:var(--amber)}.ss-note-ok{background:var(--green-bg);color:var(--green)}.ss-note-err{background:var(--red-bg);color:var(--red)}
 .ss-tag-err{background:var(--red-bg);color:var(--red)}
-.ss-finding{margin-bottom:7px}.ss-finding .ss-sub{color:inherit;opacity:.85}
+.ss-finding{margin-bottom:7px}.ss-finding .ss-sub{color:inherit}
 .ss-table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
 .ss-table th{text-align:left;font:600 10.5px 'Atkinson Hyperlegible Mono',ui-monospace,monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:4px 6px;border-bottom:1px solid var(--border)}
 .ss-table td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top}

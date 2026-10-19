@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { PlatformAction } from './OptimizelyTools';
-import { CopyButton, Empty } from '../shared/components';
+import { CopyButton, Empty, Tabs } from '../shared/components';
 import ConfirmModal from '../shared/ConfirmModal';
 
 type Section = 'visitor' | 'data' | 'experiments' | 'goals' | 'segments';
@@ -45,7 +45,7 @@ export default function KameleoonTools({ onAction, onNotice }: { onAction?: Plat
   const ask = (value: Pending) => setPending(value);
   const experimentConsent = consent(info?.experimentConsent), personalizationConsent = consent(info?.personalizationConsent);
   return <section class="ss-stack ss-opt">
-    <nav class="ss-tabs" aria-label="Kameleoon tools">{sections.map(([id, label]) => <button key={id} class={section === id ? 'ss-selected' : ''} aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>)}</nav>
+    <Tabs label="Kameleoon tools" items={sections} value={section} onChange={setSection} />
     {error && <p class="ss-note ss-note-err" role="alert">{error}</p>}
 
     {section === 'visitor' && <>

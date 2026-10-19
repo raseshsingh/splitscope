@@ -4,6 +4,7 @@ import { sanitize } from '../src/core/sanitize';
 import { targetCommand, clearTargetBlock, retainTargetExperience, clearTargetCaptures, captureQaNavigation } from '../src/core/adobe-target/background';
 import { appendJourney, beginJourney, readJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
 import { analyticsUrlPatterns, identifyEndpoint, vendorUrlPatterns } from '../src/core/platform-endpoints';
+import { safeUrl } from '../src/core/page-key';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
 import { diagnostic, diagnostics } from '../src/core/diagnostics';
@@ -16,7 +17,7 @@ const eventWrites = new Map<number, Promise<unknown>>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(messageListener(message => ['target.command', 'journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'storage.usage', 'storage.clearAll', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
+  browser.runtime.onMessage.addListener(messageListener(message => ['target.command', 'journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'storage.usage', 'storage.clearAll', 'page.clearEvents', 'page.restore', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
     if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD, diagnostics: diagnostics() };
     const tabId = sender.tab?.id;
     if (message.type === 'target.command' && tabId != null && sender.frameId === 0) return targetCommand(message, tabId, sender.url || sender.tab?.url || '');
@@ -52,18 +53,6 @@ export default defineBackground(() => {
         if (!(settings['splitscope:settings'] as any)?.keepLog) return { events: [] };
         return browser.storage.session.get(`splitscope:events:${tabId}`).then((stored) => ({ events: stored[`splitscope:events:${tabId}`] || [] }));
       });
-    }
-    if (message?.type === 'popup.toggle' && !sender.tab && Number.isInteger(message.tabId)) {
-      return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'panel.open', tab: message.tab }));
-    }
-    if (message?.type === 'popup.openExperiment' && !sender.tab && Number.isInteger(message.tabId)) {
-      return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'panel.openExperiment', platform: message.platform, id: message.id }));
-    }
-    if (message?.type === 'popup.state' && !sender.tab && Number.isInteger(message.tabId)) {
-      return ensureContentScript(message.tabId).then(() => sendToTab(message.tabId, { type: 'page.getState' })).catch(() => null);
-    }
-    if (message?.type === 'popup.rescan' && !sender.tab && Number.isInteger(message.tabId)) {
-      return sendToTab(message.tabId, { type: 'page.rescan' }).catch(() => null);
     }
     if (message?.type === 'storage.usage' && tabId != null) return browser.storage.local.get(null).then(storageUsage);
     if (message?.type === 'storage.clearAll' && tabId != null && sender.frameId === 0) return clearAllData();
@@ -233,9 +222,6 @@ function updateBadge(tabId: number, count: number, detected: boolean): void {
   }).catch(error => { badgeStates.delete(tabId); diagnostic('background', 'Could not update toolbar', error); });
 }
 
-function safeUrl(raw: string): string {
-  try { const url = new URL(raw); return `${url.origin}${url.pathname}`; } catch { return raw.slice(0, 250); }
-}
 
 // Independent of the app renderer: even a broken bridge must produce a useful visible failure.
 function showOpenError(build: string, detail: string): void {

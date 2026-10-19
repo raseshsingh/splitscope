@@ -3,6 +3,8 @@ import { webcrypto } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { requireFreshBuild } from './fresh';
+requireFreshBuild();
 const script = readFileSync('.output/chrome-mv3/background.js', 'utf8');
 const manifest = JSON.parse(readFileSync('.output/chrome-mv3/manifest.json', 'utf8'));
 function worker(optionalFailure = false) {

@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { parseHTML } from 'linkedom';
+import { requireFreshBuild } from './fresh';
+requireFreshBuild();
 
 async function mountHarness() {
   const { document, window } = parseHTML('<html><head></head><body>Host page</body></html>');

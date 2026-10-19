@@ -66,22 +66,6 @@ export interface NormalizedExperiment {
   raw: unknown;
   forced?: boolean;
 }
-export interface VisitorInfo {
-  visitorId?: string;
-  consent?: 'granted' | 'required' | 'unknown';
-  optedOut?: boolean;
-  preview?: boolean;
-  values?: Record<string, unknown>;
-}
-export interface SnippetHealth {
-  version?: string;
-  projectId?: string;
-  revision?: string;
-  snippetUrl?: string;
-  status?: string;
-  elapsedMs?: number;
-  raw?: unknown;
-}
 export interface CookieSpec { name: string; value: string; domain?: string; path?: string; expirationDate?: number }
 export type ForcePlan =
   | { method: 'url'; url: string; tracking: 'disabled' | 'counted' | 'unknown'; explanation: string }
@@ -89,8 +73,6 @@ export type ForcePlan =
   | { method: 'pre-snippet-api'; commands: unknown[]; reload: true; tracking: 'counted' | 'unknown'; explanation: string }
   | { method: 'runtime-api-then-reload'; op: string; args: unknown[]; reload: true; tracking: 'counted' | 'unknown'; explanation: string }
   | { method: 'preview-link'; url: string; explanation: string };
-export interface ForceRequest { experimentId: string; variationId: string; url: string; raw?: unknown }
-
 export type EventCategory = 'custom' | 'goal' | 'revenue' | 'pageview' | 'decision' | 'activation' | 'lifecycle' | 'identity' | 'data-feed' | 'consent' | 'network' | 'error';
 export interface CapturedEvent {
   id: string;
@@ -109,31 +91,6 @@ export interface CapturedEvent {
   /** Set when the platform's own listener reported the same call, so one action shows as one row. */
   confirmedBy?: 'listener' | 'dom-event';
   confirmation?: unknown;
-}
-
-export interface PlatformAdapter {
-  id: PlatformId;
-  displayName: string;
-  capabilities: Capabilities;
-  detect(): DetectionResult;
-  installHooks(context: AdapterContext): void;
-  whenReady(): Promise<{ ready: boolean; elapsedMs?: number; reason?: string }>;
-  listExperiments(): NormalizedExperiment[];
-  getExperiment(id: string): NormalizedExperiment | null;
-  getVisitor(): VisitorInfo;
-  getHealth(): SnippetHealth;
-  forceVariation?(request: ForceRequest): ForcePlan;
-  clearForcing?(): ForcePlan;
-  disableUrl?(url: URL): URL;
-}
-
-export interface AdapterContext {
-  emit: (event: Omit<CapturedEvent, 'id' | 't'>) => void;
-  on: (name: string, callback: (detail: unknown) => void) => void;
-  wrapQueue: (globalName: string, platform: PlatformId, classify?: (args: unknown[]) => Partial<CapturedEvent>) => void;
-  wrapMethod: (target: object | undefined, method: string, platform: PlatformId, classify?: (args: unknown[]) => Partial<CapturedEvent>) => void;
-  addCleanup: (cleanup: () => void) => void;
-  safeMode: boolean;
 }
 
 export interface DetectionRecord {

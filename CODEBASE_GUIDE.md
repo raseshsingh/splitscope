@@ -41,7 +41,6 @@ entrypoints/
   background.ts          MV3 service worker (browser-level work, storage, badge, Target commands)
   hook.content.ts        Content script, MAIN world: just calls installHookEngine(adapters)
   bridge.content.tsx     Content script, ISOLATED world: bridge to the page hook + hosts the panel UI
-  popup/, options/       Preact entrypoints that exist but are stripped from the manifest (see section 4)
 src/
   adapters/              One file per platform (14) + index.ts that lists them in order
   core/
@@ -96,8 +95,8 @@ Both content scripts match `<all_urls>` at `document_start`. The hook has to run
 
 From `wxt.config.ts`:
 
-- Permissions: `storage`, `scripting`, `webRequest`, `activeTab`, `cookies`, `declarativeNetRequest`. Host permission `<all_urls>`.
-- A `build:manifestGenerated` hook **deletes `default_popup`, `options_ui` and `options_page`** from the manifest. So `entrypoints/popup/` and `entrypoints/options/` are built but not wired in: clicking the toolbar triggers `browser.action.onClicked`, which opens the on-page panel directly. Settings live inside the panel (gear icon). The popup code (`entrypoints/popup/main.tsx`) is still maintained and the background still handles `popup.*` messages, but treat it as dormant unless you intend to restore it.
+- Permissions: `storage`, `scripting`, `webRequest`, `cookies`, `declarativeNetRequest` (activeTab was removed in 0.9.0). Host permission `<all_urls>`.
+- There is no popup or options page (removed in 0.10.0): clicking the toolbar triggers `browser.action.onClicked`, which opens the on-page panel directly. Settings live in the panel drawer.
 - Command `toggle-panel` bound to `Alt+Shift+S`.
 - `web_accessible_resources` for `assets/*` and `chunks/*` with `use_dynamic_url: true`.
 - Vite config turns minification off and source maps on, deliberately, so users can read the shipped code when investigating.
@@ -377,7 +376,6 @@ Tests live in `tests/` (`*.test.ts`, run by `tsx --test`): `accor-engine`, `back
 - **Three version strings** (`package.json`, `wxt.config.ts`, `EXTENSION_BUILD`).
 - **`Platform` picklist in `protocol.ts` and the `capabilities()` table in `install.ts`** are easy to forget when touching platforms.
 - **Background message allow list** at the top of the router.
-- **Dormant popup/options code**: edits there will not show up in the extension unless the manifest hook in `wxt.config.ts` is changed.
 - **Dead interfaces** `PlatformAdapter` / `AdapterContext` in `model.ts` can mislead; use `PageAdapter` / `HookHelpers`.
 - **Docs can drift from code.** Example: `docs/preview-and-detection.md` says the Kameleoon path is followed by `Experiments.trigger`, but `kameleoon-preview.ts` only calls `assignVariation(…, true)` and then reloads a cleaned URL. When the two disagree, trust the code.
 - **Hand-minified style in newer files**: the Adobe Target modules and parts of `background.ts` are written as dense one-liners without spacing. Match surrounding style when editing, or reformat the function you touch.
@@ -448,3 +446,9 @@ Navigation with many items uses `.ss-chips` (wrapping pill buttons): the Tools m
 ## Changes in 0.9.0 (Phase 3 of the review)
 
 `HookHelpers.poll(fn)` runs attach loops on one shared timer in `install.ts` (fast for 30 s after start or a route change, then 5 s, paused while hidden). `snapshotSignature` is checked before `serializeSnapshot`. `captureOptions` now carries `panelOpen`; the bridge sends it from `sendOptions()` when the panel mounts or closes. The hook handle is `Symbol.for('splitscope.hook')`; a new hook calls the old handle's `stop`, and `stop` removes the handle. The bridge records the request IDs it issued (`issued`) and drops `force-*` statuses that answer none of them; `dispose` posts `stop`. `withPreviewToken` and `consumePreviewToken` (install.ts) guard the VWO and Kameleoon URL markers with one time tokens in page localStorage. `core/storage-budget.ts` holds the storage rules (`capStrings`, `expireValue`, `planStorageCleanup`, `storageUsage`); the background runs `cleanStorage` after local writes and answers `storage.usage` and `storage.clearAll`. `core/sanitize.ts` exports `redactText`. `platform-endpoints.ts` exports `vendorUrlPatterns` and `analyticsUrlPatterns` for the webRequest filters. Tests: `tests/hook.test.ts`, `tests/sanitize.test.ts`, `tests/storage-budget.test.ts`.
+
+## Changes in 0.10.0 (Phase 4 of the review)
+
+Accessibility: `ui/panel/shortcuts.ts` (`shortcutIntent`) decides what a key does; shortcuts never fire inside fields, dialogs or the open Settings drawer, and Escape in a field only leaves the field. The Settings drawer is a modal dialog (`aria-modal`, focus moves in and back, Tab is trapped, the rest of the panel is `inert`). `Tabs` in `ui/shared/components.tsx` is the one tab strip (role tablist, roving tabindex, Arrow/Home/End); the activity detail, Adobe Target groups, Optimizely and Kameleoon tools use it. Light theme colors in `ui/shared/theme.css` meet 4.5:1 on their tinted backgrounds. Workspace import is a real button.
+
+Maintenance: `npm run typecheck`, `npm run test:unit` (plain unit tests in `tests/`), `npm run test:bundle` (builds, then `tests/bundle/`, which refuse to run against a missing or stale build via `tests/bundle/fresh.ts`), and `npm run check` for all three; `.github/workflows/ci.yml` runs them. `tests/hook.test.ts` runs the real hook engine on linkedom (wrapper transparency, handshake lock, stop, re-injection, fetch rejection). `tests/version.test.ts` keeps package.json, the lockfile, wxt.config.ts, `EXTENSION_BUILD`, README and CHANGELOG on one version. Shared helpers: `makeNonce` (bridge/protocol.ts) and `safeUrl` (page-key.ts). Removed: the unused popup and options entrypoints, the background `popup.*` messages, and the unused `PlatformAdapter`, `AdapterContext`, `VisitorInfo`, `SnippetHealth` and `ForceRequest` types.

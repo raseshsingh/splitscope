@@ -1,12 +1,12 @@
 import { serializeSnapshot } from '../bridge/snapshot';
-import { pageKey } from '../page-key';
+import { pageKey, safeUrl as safeUrlFrom } from '../page-key';
 import { classifyTarget } from '../adobe-target/wire';
 import { EXTENSION_BUILD } from '../extension/messages';
 import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
 import { identifyEndpoint } from '../platform-endpoints';
 import { diagnostic } from '../diagnostics';
-import { parseBridgeMessage } from '../bridge/protocol';
+import { makeNonce, parseBridgeMessage } from '../bridge/protocol';
 import { sanitize } from '../sanitize';
 import type { CapturedEvent, DetectionRecord, NormalizedExperiment, PlatformId } from '../model';
 import type { AnyRecord, HookHelpers, PageAdapter } from './runtime';
@@ -477,9 +477,6 @@ export function consumePreviewToken(token: string | null): boolean {
   return valid;
 }
 
-function makeNonce(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
 
 function captureCaller(): string | undefined {
   try {
@@ -512,36 +509,47 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
   const ownedByTarget = (raw: string) => { try { return Boolean(classifyTarget(new URL(raw, location.href).href)); } catch { return false; } };
   const originalFetch = window.fetch;
   const fetchWrapper: typeof window.fetch = function (this: Window, input: RequestInfo | URL, init?: RequestInit) {
-    const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
-    const platform = ownedByTarget(url) ? undefined : classify(url);
-    if (platform) emit({ platform, category: 'network', name: `${init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')} ${safeUrl(url)}`, properties: { query: analytics() && analyticsEndpoint(url) ? queryValues(url) : undefined, body: safeBody(init?.body), mode: init?.mode }, via: 'network', caller: captureCaller() });
+    // Observation never changes how the call behaves: fetch(null) still rejects inside fetch, not in our code.
+    try {
+      const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
+      const platform = ownedByTarget(url) ? undefined : classify(url);
+      if (platform) emit({ platform, category: 'network', name: `${init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')} ${safeUrl(url)}`, properties: { query: analytics() && analyticsEndpoint(url) ? queryValues(url) : undefined, body: safeBody(init?.body), mode: init?.mode }, via: 'network', caller: captureCaller() });
+    } catch {}
     return Reflect.apply(originalFetch, this, [input, init]);
   };
-  window.fetch = fetchWrapper;
-  cleanups.push(() => { if (window.fetch === fetchWrapper) window.fetch = originalFetch; });
+  if (typeof originalFetch === 'function') {
+    window.fetch = fetchWrapper;
+    cleanups.push(() => { if (window.fetch === fetchWrapper) window.fetch = originalFetch; });
+  }
+  if (typeof XMLHttpRequest !== 'undefined') {
 
   const xhrOpen = XMLHttpRequest.prototype.open;
   const xhrSend = XMLHttpRequest.prototype.send;
   const urlKey = '__splitscope_url__';
   const openWrapper: typeof xhrOpen = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: any[]) {
-    (this as any)[urlKey] = { method, url: String(url) };
+    try { (this as any)[urlKey] = { method, url: String(url) }; } catch {}
     return Reflect.apply(xhrOpen, this, [method, url, ...rest]);
   } as typeof xhrOpen;
   const sendWrapper: typeof xhrSend = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
+    try {
     const request = (this as any)[urlKey];
     const platform = request && !ownedByTarget(request.url) ? classify(request.url) : undefined;
     if (platform) emit({ platform, category: 'network', name: `${request.method} ${safeUrl(request.url)}`, properties: { query: analytics() && analyticsEndpoint(request.url) ? queryValues(request.url) : undefined, body: safeBody(body) }, via: 'network', caller: captureCaller() });
+    } catch {}
     return Reflect.apply(xhrSend, this, [body]);
   } as typeof xhrSend;
   XMLHttpRequest.prototype.open = openWrapper;
   XMLHttpRequest.prototype.send = sendWrapper;
   cleanups.push(() => { if (XMLHttpRequest.prototype.open === openWrapper) XMLHttpRequest.prototype.open = xhrOpen; if (XMLHttpRequest.prototype.send === sendWrapper) XMLHttpRequest.prototype.send = xhrSend; });
 
-  if (typeof navigator.sendBeacon === 'function') {
+  }
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
     const sendBeacon = navigator.sendBeacon;
     const sendBeaconWrapper: typeof navigator.sendBeacon = function (this: Navigator, url: string | URL, data?: BodyInit | null) {
-      const platform = classify(String(url));
-      if (platform) emit({ platform, category: 'network', name: `beacon ${safeUrl(String(url))}`, properties: { query: analytics() && analyticsEndpoint(String(url)) ? queryValues(String(url)) : undefined, body: safeBody(data) }, via: 'network', caller: captureCaller() });
+      try {
+        const platform = classify(String(url));
+        if (platform) emit({ platform, category: 'network', name: `beacon ${safeUrl(String(url))}`, properties: { query: analytics() && analyticsEndpoint(String(url)) ? queryValues(String(url)) : undefined, body: safeBody(data) }, via: 'network', caller: captureCaller() });
+      } catch {}
       return Reflect.apply(sendBeacon, this, [url, data]);
     };
     navigator.sendBeacon = sendBeaconWrapper;
@@ -549,9 +557,7 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
   }
 }
 
-function safeUrl(raw: string): string {
-  try { const url = new URL(raw, location.href); return `${url.origin}${url.pathname}`; } catch { return raw.slice(0, 250); }
-}
+const safeUrl = (raw: string) => safeUrlFrom(raw, location.href);
 
 function queryValues(raw: string) { try { return sanitize(Object.fromEntries(new URL(raw, location.href).searchParams)); } catch { return undefined; } }
 

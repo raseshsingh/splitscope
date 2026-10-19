@@ -8,3 +8,8 @@ export function pageKey(href: string = (globalThis as any).location?.href ?? '')
 export function samePage(a: string | undefined, b: string | undefined = (globalThis as any).location?.href): boolean {
   return a != null && b != null && pageKey(a) === pageKey(b);
 }
+
+/** Origin and path only, for display and logs: query strings and fragments can carry tokens. */
+export function safeUrl(raw: string, base?: string): string {
+  try { const url = new URL(raw, base); return `${url.origin}${url.pathname}`; } catch { return String(raw).slice(0, 250); }
+}

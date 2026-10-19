@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0
+
+Phase 4 of the extension review: accessibility and maintainability.
+
+Accessibility
+- Keyboard shortcuts no longer fire while typing, inside a dialog, or behind the open Settings drawer. Escape in a field leaves the field; a second Escape closes or minimizes.
+- Settings is a real modal dialog: focus moves into it and back to the gear, Tab stays inside, and the panel behind it is inert.
+- One tab strip for the activity detail, Adobe Target groups, Optimizely and Kameleoon tools, with Arrow, Home and End keys.
+- Light theme green, amber, blue, red and muted text are darker so small text meets 4.5:1 on its tinted background. Navigation numbers and counts are no longer faded.
+- Import workspace is a button you can reach and press from the keyboard.
+
+Maintainability
+- New scripts: typecheck, test:unit, test:bundle (builds first) and check (all three). A GitHub Actions workflow runs them.
+- Bundle tests live in tests/bundle and stop with a clear message when the build is missing or older than the source.
+- Hook tests run the real page hook: wrappers return and throw exactly like the site's method, the handshake locks after connecting, stop restores everything, a re-injected hook replaces the old one, and fetch(null) still rejects instead of throwing in our code. A version test keeps every version string in step.
+- fetch, XHR and sendBeacon observation can no longer throw into the site's call.
+- One makeNonce and one safeUrl helper. The unused popup and options pages, their background messages and five unused model types are removed.
+
 ## 0.9.0
 
 Phase 3 of the extension review: safe and light on every site.
