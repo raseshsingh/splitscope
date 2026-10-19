@@ -13,7 +13,7 @@ It helps marketers, developers, analysts, and QA teams answer practical question
 - Did an assignment change after navigation, a reload, or a preview?
 - What evidence can I share with the person investigating an issue?
 
-**Current version:** 0.8.0 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
+**Current version:** 0.9.0 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
 
 > Coverage depends on what a website exposes. Splitscope inspects browser-visible data; it does not connect to vendor accounts or retrieve every experiment configured in a project. A reported decision does not, by itself, prove that all visual changes rendered.
 
@@ -249,9 +249,9 @@ Captured data is bounded and common sensitive fields are redacted. Redaction is 
 The extension requests:
 
 - **Host access to all URLs:** inspect supported platforms on the websites you visit.
-- **Scripting and activeTab:** install the page inspector and respond to the toolbar action.
+- **Scripting:** install the page inspector when you click the toolbar action.
 - **Storage:** retain settings and QA artifacts.
-- **webRequest:** observe supported network metadata and requests.
+- **webRequest:** observe beacons sent to supported vendor domains, and Adobe Analytics `/b/ss/` hits when Capture analytics calls is on.
 - **Cookies:** support Target identity and QA inspection/cleanup.
 - **declarativeNetRequest:** apply Target baseline blocking rules scoped to a tab.
 

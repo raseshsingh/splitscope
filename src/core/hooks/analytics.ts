@@ -1,7 +1,7 @@
 import type { RuntimeEmitter } from './runtime';
 import type { CapturedEvent } from '../model';
 // Capture only future calls. Never replay a queue or invoke a tracking method.
-export function installAnalytics(emit: RuntimeEmitter, enabled: () => boolean, cleanups: Array<() => void>) {
+export function installAnalytics(emit: RuntimeEmitter, enabled: () => boolean, cleanups: Array<() => void>, poll?: (fn: () => void) => () => void) {
   const wrapped = new WeakSet<Function>(); let insideGtag = 0;
   const win = window as any;
   function wrap(owner: any, key: string, observe: (args: any[], self: any) => void, gtag = false) {
@@ -43,7 +43,7 @@ export function installAnalytics(emit: RuntimeEmitter, enabled: () => boolean, c
       capture('adobe-analytics', method === 'tl' ? String(args[2] || 's.tl') : 's.t', { ...values, arguments: args }, method === 't' ? 'pageview' : 'custom');
     });
   };
-  refresh(); const timer = setInterval(refresh, 500); cleanups.push(() => clearInterval(timer));
+  if (poll) cleanups.push(poll(refresh)); else { refresh(); const timer = setInterval(refresh, 500); cleanups.push(() => clearInterval(timer)); }
   return refresh;
 }
 

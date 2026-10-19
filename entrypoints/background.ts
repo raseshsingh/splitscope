@@ -3,11 +3,12 @@ import { enrichIntegrity } from '../src/core/adobe-target/integrity';
 import { sanitize } from '../src/core/sanitize';
 import { targetCommand, clearTargetBlock, retainTargetExperience, clearTargetCaptures, captureQaNavigation } from '../src/core/adobe-target/background';
 import { appendJourney, beginJourney, readJourney, recordSnapshot, type Journey } from '../src/core/qa/journey';
-import { identifyEndpoint } from '../src/core/platform-endpoints';
+import { analyticsUrlPatterns, identifyEndpoint, vendorUrlPatterns } from '../src/core/platform-endpoints';
 import { browser } from 'wxt/browser';
 import { BRIDGE_PROTOCOL, EXTENSION_BUILD, errorText, messageListener, unwrapReply } from '../src/core/extension/messages';
 import { diagnostic, diagnostics } from '../src/core/diagnostics';
 import { normalizeSettings } from '../src/core/settings';
+import { capStrings, planStorageCleanup, storageUsage, SETTINGS_KEY, STORAGE_PREFIX } from '../src/core/storage-budget';
 
 type TabSummary = { url?: string; platforms?: Array<{ id: string; displayName: string; state: string }>; experimentCount?: number; eventCount?: number; activeCount?: number };
 const eventBatches = new Map<number, { events: unknown[]; done: Promise<unknown> }>();
@@ -15,7 +16,7 @@ const eventWrites = new Map<number, Promise<unknown>>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(messageListener(message => ['target.command', 'journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
+  browser.runtime.onMessage.addListener(messageListener(message => ['target.command', 'journey.get', 'journey.start', 'journey.stop', 'journey.clear', 'preview.save', 'preview.get', 'background.ping', 'page.snapshot', 'panel.remember', 'panel.restore', 'preview.open', 'page.event', 'storage.usage', 'storage.clearAll', 'page.clearEvents', 'page.restore', 'popup.toggle', 'popup.openExperiment', 'popup.state', 'popup.rescan', 'settings.get', 'settings.set'].includes(message?.type), (message: any, sender) => {
     if (message.type === 'background.ping') return { ok: true, build: EXTENSION_BUILD, diagnostics: diagnostics() };
     const tabId = sender.tab?.id;
     if (message.type === 'target.command' && tabId != null && sender.frameId === 0) return targetCommand(message, tabId, sender.url || sender.tab?.url || '');
@@ -64,6 +65,8 @@ export default defineBackground(() => {
     if (message?.type === 'popup.rescan' && !sender.tab && Number.isInteger(message.tabId)) {
       return sendToTab(message.tabId, { type: 'page.rescan' }).catch(() => null);
     }
+    if (message?.type === 'storage.usage' && tabId != null) return browser.storage.local.get(null).then(storageUsage);
+    if (message?.type === 'storage.clearAll' && tabId != null && sender.frameId === 0) return clearAllData();
     if (message?.type === 'settings.get') return browser.storage.local.get('splitscope:settings');
     if (message?.type === 'settings.set') return (async () => {
       const settings = normalizeSettings(message.value);
@@ -121,7 +124,7 @@ export default defineBackground(() => {
       event: { id: `${Date.now()}-${details.requestId}`, t: Date.now(), platform, category: 'network', name: `${details.method} ${safeUrl(details.url)}`, via: 'network', pageUrl: details.initiator, properties: { type: details.type } }
     }).catch(() => {});
     return undefined;
-  }, { urls: ['<all_urls>'], types: ['image'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
+  }, { urls: vendorUrlPatterns(), types: ['image'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
   // Adobe Analytics beacons are recorded only when "Capture analytics calls" is on.
   let captureAnalytics = false;
   void browser.storage.local.get('splitscope:settings').then(value => { captureAnalytics = normalizeSettings(value['splitscope:settings']).analyticsCapture === true; }).catch(() => {});
@@ -135,7 +138,12 @@ export default defineBackground(() => {
       const properties = sanitize({...wire,integrity:await enrichIntegrity(wire)},100_000);
       await browser.tabs.sendMessage(details.tabId,{type:'page.networkEvent',event:{id:'target-aa-'+details.requestId,t:details.timeStamp,platform:'adobe-analytics',category:'network',name:'Target inspector · Analytics beacon',via:'network',pageUrl:tab.url,properties}});
     }).catch(()=>{});
-  },{urls:['<all_urls>'],types:['image','ping']}); } catch (error) { diagnostic('target','Analytics beacon capture unavailable',error); }
+  },{urls:analyticsUrlPatterns,types:['image','ping']}); } catch (error) { diagnostic('target','Analytics beacon capture unavailable',error); }
+  // Keep local storage bounded: expire old Target memory and QA links, evict the oldest data over budget.
+  let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleCleanup = (delay: number) => { if (cleanupTimer) return; cleanupTimer = setTimeout(() => { cleanupTimer = undefined; void cleanStorage().catch(error => diagnostic('background', 'Storage cleanup failed', error)); }, delay); };
+  browser.storage.onChanged.addListener((changes, area) => { if (area === 'local' && Object.keys(changes).some(key => key.startsWith(STORAGE_PREFIX) && key !== SETTINGS_KEY)) scheduleCleanup(30_000); });
+  scheduleCleanup(5_000);
   // Register all core listeners before any cosmetic work.
   void Promise.resolve().then(() => browser.action.setIcon({ path: 'icons/idle.png' })).catch(error => diagnostic('background', 'Toolbar icon unavailable', error));
   console.info(`[Splitscope/background v${EXTENSION_BUILD}] Ready`);
@@ -199,7 +207,7 @@ function queueTabEventWrite(tabId: number, event: unknown): Promise<unknown> {
     const key = `splitscope:events:${tabId}`;
     const current = await browser.storage.session.get(key);
     const events = Array.isArray(current[key]) ? current[key] as unknown[] : [];
-    const combined = [...events, ...batch.events].slice(-5000);
+    const combined = [...events, ...batch.events.map(item => capStrings(item))].slice(-5000);
     // Session storage is shared by all tabs. Bound each saved timeline as well as its count.
     let bytes = JSON.stringify(combined).length;
     while (bytes > 1_500_000 && combined.length) { const removed = combined.shift(); bytes -= JSON.stringify(removed).length + 1; }
@@ -281,4 +289,19 @@ function manageJourney(tabId: number, type: string, url: string) {
     if (type === 'journey.stop' && journey) { journey.recording = false; journey.endedAt = Date.now(); await browser.storage.session.set({ [key]: journey }); }
     return journey || null;
   });
+}
+
+async function cleanStorage(): Promise<void> {
+  const plan = planStorageCleanup(await browser.storage.local.get(null), Date.now());
+  if (plan.remove.length) await browser.storage.local.remove(plan.remove);
+  if (Object.keys(plan.set).length) await browser.storage.local.set(plan.set);
+}
+/** "Clear all Splitscope data": everything except settings, in local and session storage. */
+async function clearAllData(): Promise<{ ok: true }> {
+  await Promise.allSettled([...eventWrites.values()]);
+  const local = await browser.storage.local.get(null);
+  await browser.storage.local.remove(Object.keys(local).filter(key => key.startsWith(STORAGE_PREFIX) && key !== SETTINGS_KEY));
+  const session = await browser.storage.session.get(null);
+  await browser.storage.session.remove(Object.keys(session).filter(key => key.startsWith(STORAGE_PREFIX)));
+  return { ok: true };
 }

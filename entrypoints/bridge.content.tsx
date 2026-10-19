@@ -29,10 +29,13 @@ export default defineContentScript({
     const instanceId = crypto.randomUUID();
     contentWindow.__splitscopeBridgeInstalled = instanceId;
     let disposed = false;
+    let nonce = '';
     const cleanup: Array<() => void> = [];
     const dispose = () => {
       if (disposed) return;
       disposed = true;
+      // Stop the page hook this bridge connected to, so a re-injected hook can take over cleanly.
+      if (nonce) { try { window.postMessage({ namespace: '__splitscope__', nonce, type: 'command', requestId: 'dispose', payload: { name: 'stop' } }, '*'); } catch {} }
       if (!ctx.signal.aborted) { try { ctx.abort('Splitscope connection expired'); } catch {} }
       for (const remove of cleanup.splice(0).reverse()) { try { remove(); } catch {} }
       if (contentWindow.__splitscopeBridgeInstalled === instanceId) delete contentWindow.__splitscopeBridgeInstalled;
@@ -80,14 +83,13 @@ export default defineContentScript({
     const expectations = signal<EventExpectation[]>([]);
     const expectationsKey = `splitscope:expectations:${location.origin}`;
     const expectationsLoaded = browser.storage.local.get(expectationsKey).then(value => { expectations.value = normalizeExpectations(value[expectationsKey]); }).catch(error => diagnostic('bridge', 'Could not load expectations', error));
-    const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) { settings.value = normalizeSettings(result?.['splitscope:settings']); command('captureOptions', { analytics: settings.value.analyticsCapture }); } }).catch(error => diagnostic('bridge', 'Could not load settings', error));
+    const settingsLoaded = send({ type: 'settings.get' }).then(result => { if (isAlive()) { settings.value = normalizeSettings(result?.['splitscope:settings']); sendOptions(); } }).catch(error => diagnostic('bridge', 'Could not load settings', error));
     const onSettingsChanged = (changes: Record<string, any>, area: string) => {
       if (isAlive() && area === 'local') { if (changes[workspaceKey] && !workspacePending) workspace.value = normalizeWorkspace(changes[workspaceKey].newValue); if (changes[expectationsKey] && !expectationPending) expectations.value = normalizeExpectations(changes[expectationsKey].newValue); }
-      if (isAlive() && area === 'local' && changes['splitscope:settings']) { settings.value = normalizeSettings(changes['splitscope:settings'].newValue); command('captureOptions', { analytics: settings.value.analyticsCapture }); }
+      if (isAlive() && area === 'local' && changes['splitscope:settings']) { settings.value = normalizeSettings(changes['splitscope:settings'].newValue); sendOptions(); }
     };
     browser.storage.onChanged.addListener(onSettingsChanged);
     cleanup.push(() => browser.storage.onChanged.removeListener(onSettingsChanged));
-    let nonce = '';
     let mounting: Promise<void> | undefined;
     let ui: Awaited<ReturnType<typeof createShadowRootUi>> | undefined;
     let uiMounted = false;
@@ -114,7 +116,7 @@ export default defineContentScript({
         mode: 'closed',
         isolateEvents: ['keydown', 'keyup', 'keypress'],
         onMount(container) {
-          render(<PanelBoundary><App onPlatformAction={platformAction} onTargetAction={async payload => { if (payload.action === 'probe') { command('targetProbe', {mbox:payload.mbox}); return {ok:true}; } return send({ ...payload, type: 'target.command' }); }} checkRun={checkRun} onCheckRun={value => { checkRun.value = value; }} workspace={workspace} onWorkspace={value => { workspace.value = normalizeWorkspace(value); const snapshot = workspace.value; workspacePending++; workspaceWrites = workspaceWrites.then(() => browser.storage.local.set({ [workspaceKey]: snapshot })).catch(error => report('Could not save workspace', error)).finally(() => { workspacePending--; }); }} journey={journey} onJourney={async action => { const request = ++journeyRequest; try { const value = await send({ type: `journey.${action}` }); if (request === journeyRequest) journey.value = readJourney(value); if (action === 'start') command('rescan'); } catch (error) { report('Could not update journey', error); throw error; } }} expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); const snapshot = expectations.value; expectationPending++; expectationWrites = expectationWrites.then(() => browser.storage.local.set({ [expectationsKey]: snapshot })).catch(error => report('Could not save expectations', error)).finally(() => { expectationPending--; }); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; if (value && checkRun.value && !checkRun.value.endedAt) checkRun.value = { ...checkRun.value, interrupted: true }; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href, state.value.preview); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
+          render(<PanelBoundary><App onStorage={action => send({ type: action === 'clear' ? 'storage.clearAll' : 'storage.usage' })} onPlatformAction={platformAction} onTargetAction={async payload => { if (payload.action === 'probe') { command('targetProbe', {mbox:payload.mbox}); return {ok:true}; } return send({ ...payload, type: 'target.command' }); }} checkRun={checkRun} onCheckRun={value => { checkRun.value = value; }} workspace={workspace} onWorkspace={value => { workspace.value = normalizeWorkspace(value); const snapshot = workspace.value; workspacePending++; workspaceWrites = workspaceWrites.then(() => browser.storage.local.set({ [workspaceKey]: snapshot })).catch(error => report('Could not save workspace', error)).finally(() => { workspacePending--; }); }} journey={journey} onJourney={async action => { const request = ++journeyRequest; try { const value = await send({ type: `journey.${action}` }); if (request === journeyRequest) journey.value = readJourney(value); if (action === 'start') command('rescan'); } catch (error) { report('Could not update journey', error); throw error; } }} expectations={expectations} onExpectations={value => { expectations.value = normalizeExpectations(value); const snapshot = expectations.value; expectationPending++; expectationWrites = expectationWrites.then(() => browser.storage.local.set({ [expectationsKey]: snapshot })).catch(error => report('Could not save expectations', error)).finally(() => { expectationPending--; }); }} state={state} initialPaused={eventsPaused} requestedExperiment={requestedExperiment} requestedTab={requestedTab} settings={settings} onSettings={(value) => { settings.value = value; void send({ type: 'settings.set', value }).catch(error => report('Could not save settings', error)); }} onClearEvents={() => { state.value = { ...state.value, events: [] }; void send({ type: 'page.clearEvents' }).catch(error => report('Could not clear saved events', error)); }} onClose={() => closeUi()} onRescan={() => command('rescan')} onPauseEvents={(value) => { eventsPaused = value; if (value && checkRun.value && !checkRun.value.endedAt) checkRun.value = { ...checkRun.value, interrupted: true }; }} onForceRequest={(payload) => command('forceVariation', payload)} onResetPreview={() => { const record = state.value.preview; if (!record) return; void send({ type: 'preview.save', value: null }).then(() => { state.value = { ...state.value, preview: null }; location.assign(resetPreviewUrl(record, location.href)); }).catch(error => report('Could not reset preview', error)); }} onForceExecute={(plan, target, request) => { void (async () => { if (!request) throw new Error('Select a variation again.'); const preview = createPreview(request, plan, location.href, state.value.preview); if (target === 'new' && (plan.method === 'url' || plan.method === 'preview-link')) await send({ type: 'preview.open', url: plan.url, preview }); else { await send({ type: 'preview.save', value: preview }); state.value = { ...state.value, preview }; command('executeForcePlan', { plan }); } })().catch(error => report('Could not start preview', error)); }} /></PanelBoundary>, container);
           return container;
         },
         onRemove(container) { uiMounted = false; if (container) render(null, container); }
@@ -123,19 +125,24 @@ export default defineContentScript({
       ui.mount();
       uiMounted = ui.shadowHost.isConnected;
       if (!uiMounted) throw new Error('The website removed the panel while it was opening.');
+      sendOptions();
       document.getElementById('splitscope-open-error')?.remove();
       void send({ type: 'panel.remember', open: true }).catch(error => report('Could not remember panel', error));
       } catch (error) { report('Panel mount failed', error); throw error; }
       })().finally(() => { mounting = undefined; });
       return mounting;
     };
-    const closeUi = (remember = true) => { ui?.remove(); uiMounted = false; if (remember && isAlive()) void send({ type: 'panel.remember', open: false }).catch(error => report('Could not save panel state', error)); };
+    const closeUi = (remember = true) => { const wasOpen = uiMounted; ui?.remove(); uiMounted = false; if (wasOpen) sendOptions(); if (remember && isAlive()) void send({ type: 'panel.remember', open: false }).catch(error => report('Could not save panel state', error)); };
     cleanup.push(() => closeUi(false));
     const report = (message: string, error?: unknown) => { if (!isAlive()) return; const item = diagnostic('bridge', message, error); if (item) state.value = { ...state.value, statuses: [...state.value.statuses.slice(-49), { message, error: error ? errorText(error) : message, diagnostic: item }] }; };
+    // Request IDs this bridge issued. Preview plans and errors are accepted only as answers to one of them.
+    const issued = new Map<string, number>();
     const command = (name: string, payload: Record<string, unknown> = {}, requestId = `ss-${Date.now()}-${++commandSequence}`) => {
       if (!isAlive()) return;
+      issued.set(requestId, Date.now()); if (issued.size > 200) issued.delete(issued.keys().next().value!);
       window.postMessage({ namespace: '__splitscope__', nonce, type: 'command', requestId, payload: { name, ...payload } }, '*');
     };
+    const sendOptions = () => command('captureOptions', { analytics: settings.value.analyticsCapture, panelOpen: uiMounted });
     // Ask the page hook to run a platform action and wait for its answer.
     const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: number }>();
     const platformAction = (platform: string, action: string, args: Record<string, unknown> = {}) => new Promise<unknown>((resolve, reject) => {
@@ -159,7 +166,7 @@ export default defineContentScript({
         if (!currentBuild) report('Reload this website to finish updating Splitscope.');
         console.info('[Splitscope/bridge] Connected to page hook');
         window.postMessage({ namespace: '__splitscope__', nonce, type: 'ready' }, '*');
-        command('captureOptions', { analytics: settings.value.analyticsCapture });
+        sendOptions();
         return;
       }
       if (message.nonce !== nonce) return;
@@ -201,6 +208,11 @@ export default defineContentScript({
         send({ type: 'page.event', event: incoming, count: events.length }).catch(error => report('Could not save event', error));
       } else if (message.type === 'status' && message.payload && typeof message.payload === 'object') {
         const body = message.payload as Record<string, any>;
+        if (typeof body.message === 'string' && body.message.startsWith('force-')) {
+          const at = issued.get(String(body.requestId));
+          if (!at || Date.now() - at > 60000) { diagnostic('bridge', 'Ignored a preview message that does not answer a Splitscope request'); return; }
+          issued.delete(String(body.requestId));
+        }
         if (body.message === 'platform-result') {
           const waiting = pending.get(String(body.requestId));
           if (waiting) { pending.delete(String(body.requestId)); window.clearTimeout(waiting.timer); if (body.error) waiting.reject(new Error(String(body.error))); else waiting.resolve(body.result); }

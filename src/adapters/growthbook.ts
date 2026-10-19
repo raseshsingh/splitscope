@@ -48,6 +48,6 @@ export const growthbookAdapter: PageAdapter = {
       helpers.wrapMethod(gb, 'run', 'growthbook', args => `Experiment evaluation: ${String((args[0] as any)?.key ?? '')}`, 'decision', (args, result) => observe(args[0], result));
       helpers.wrapMethod(gb, 'logEvent', 'growthbook', args => String(args[0]), 'custom');
     };
-    const safeAttach = () => { try { attach(); } catch {} }; safeAttach(); const timer = setInterval(safeAttach, 500); helpers.addCleanup(() => clearInterval(timer));
+    helpers.poll(attach);
   }
 };

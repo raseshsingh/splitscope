@@ -33,6 +33,8 @@ export interface HookHelpers {
   addExperiment(experiment: NormalizedExperiment): void;
   invalidate(platform: PlatformId): void;
   addCleanup(fn: () => void): void;
+  /** Run `fn` on the shared scheduler: every 500 ms for 30 s after start or a route change, then every 5 s; never while the tab is hidden. Returns a cancel function. */
+  poll(fn: () => void): () => void;
 }
 
 export function getPath(root: unknown, path: string): any {

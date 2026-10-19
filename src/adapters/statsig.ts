@@ -37,6 +37,6 @@ export const statsigAdapter: PageAdapter = {
       };
       client.on('*', listener); helpers.addCleanup(() => client.off?.('*', listener));
     } };
-    const safeAttach = () => { try { attach(); } catch {} }; safeAttach(); const timer = setInterval(safeAttach, 500); helpers.addCleanup(() => clearInterval(timer));
+    helpers.poll(attach);
   }
 };

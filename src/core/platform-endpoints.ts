@@ -17,3 +17,10 @@ export function identifyEndpoint(raw: string, base?: string): PlatformId | undef
     return domains.find(([, hosts]) => hosts.some(host => url.hostname === host || url.hostname.endsWith('.' + host)))?.[0];
   } catch { return undefined; }
 }
+
+/** webRequest match patterns for vendor beacons, so the worker is not woken for every image on every site. */
+export function vendorUrlPatterns(): string[] {
+  return [...new Set(domains.flatMap(([, hosts]) => hosts)), 'tt.omtrdc.net'].map(host => `*://*.${host}/*`);
+}
+/** Adobe Analytics beacons, including first-party tracking domains. */
+export const analyticsUrlPatterns = ['*://*/b/ss/*'];

@@ -1,6 +1,21 @@
 import { functionSource } from './function-source';
-const SECRET_KEY = /password|authorization|cookie|token|secret|email|phone|mobile|external.?id/i;
-const SECRET_QUERY = /([?&](?:access_token|auth|authorization|code|email|id_token|password|refresh_token|secret|session|token)=)[^&#\s]*/gi;
+// Keys whose values are credentials or personal data. Matched on the field name, so experiment and change data keep their names.
+const SECRET_KEY = /password|passwd|^pwd$|authorization|^auth$|cookie|token|secret|api.?key|private.?key|credential|session.?id|^sid$|email|e.?mail|phone|mobile|external.?id|(?:first|last|full|given|family|sur).?name|street|address|postal.?code|zip.?code|birth|^dob$|^ssn$|social.?security|card.?number|^cvv$|^cvc$|iban/i;
+const SECRET_QUERY = /([?&#;](?:access_token|api_?key|apikey|auth|authorization|client_secret|code|email|id_token|key|password|refresh_token|secret|session|session_?id|sid|token)=)[^&#\s]*/gi;
+const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/g;
+const JWT = /\beyJ[\w-]{5,}\.eyJ[\w-]{5,}\.[\w-]{5,}/g;
+const ENCODED_EMAIL = /[\w.+-]{1,64}%40[\w.-]{1,253}\.[A-Za-z]{2,63}/gi;
+/** Redact secrets that appear inside a string value: emails (plain and URL encoded), secret query parameters, bearer and basic credentials, JWTs. */
+export function redactText(input: string): string {
+  let text = input;
+  // Bound email matching so a long minified identifier cannot cause quadratic scanning.
+  if (text.includes('@')) text = text.replace(/[\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,63}/g, '[email]');
+  if (text.includes('%40')) text = text.replace(ENCODED_EMAIL, '[email]');
+  if (text.includes('=')) text = text.replace(SECRET_QUERY, '$1[redacted]');
+  if (/Bearer|Basic/.test(text)) text = text.replace(BEARER, '$1 [redacted]');
+  if (text.includes('eyJ')) text = text.replace(JWT, '[jwt]');
+  return text;
+}
 const MAX_DEPTH = 14;
 const MAX_STRING = 100_000;
 const MAX_ITEMS = 500;
@@ -15,8 +30,7 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
     if (input === null || input === undefined || typeof input === 'boolean' || typeof input === 'number') return input;
     if (typeof input === 'bigint') return `${input}n`;
     if (typeof input === 'string') {
-      // Bound email matching so a long minified identifier cannot cause quadratic scanning.
-      const text = (input.includes('@') ? input.replace(/[\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,63}/g, '[email]') : input).replace(SECRET_QUERY, '$1[redacted]');
+      const text = redactText(input);
       const clipped = text.length > MAX_STRING ? `${text.slice(0, MAX_STRING)}…[truncated]` : text;
       if (clipped.length <= budget) { budget -= clipped.length; return clipped; }
       // Keep the start of an oversized string (usually code or markup) instead of discarding it.
@@ -42,6 +56,8 @@ export function sanitize(value: unknown, maxBytes = 256_000, maxDepth = MAX_DEPT
     if (input instanceof Map) return visit(Array.from(input.entries()).slice(0, MAX_ITEMS), depth + 1);
     if (input instanceof Set) return visit(Array.from(input.values()).slice(0, MAX_ITEMS), depth + 1);
     if (Array.isArray(input)) {
+      // Header pairs such as ['Authorization', 'Bearer …'] or ['Cookie', '…'] keep the name and lose the value.
+      if (input.length === 2 && typeof input[0] === 'string' && input[0].length < 100 && SECRET_KEY.test(input[0])) return [visit(input[0], depth + 1), '[redacted]'];
       const result: unknown[] = [];
       for (let index = 0; index < Math.min(input.length, MAX_ITEMS); index++) {
         if (budget <= 0) { result.push('[payload truncated]'); break; }

@@ -30,8 +30,13 @@ export function installTargetTiming(helpers:HookHelpers) {
  });
  // Attribute and text mutations are only watched while a Target response is waiting to be correlated; otherwise only node additions matter (prehide style).
  let wide=false;
- const watch=(full:boolean)=>{if(full===wide)return;wide=full;observer.observe(document,full?{subtree:true,childList:true,attributes:true,characterData:true}:{subtree:true,childList:true});};
- observer.observe(document,{subtree:true,childList:true});checkPrehide();
+ const watch=(full:boolean)=>{activate();if(full===wide)return;wide=full;observer.observe(document,full?{subtree:true,childList:true,attributes:true,characterData:true}:{subtree:true,childList:true});};
+ // Nothing is observed until Target shows up: most sites never pay for a document wide observer.
+ let active=false;
+ const activate=()=>{if(active)return;active=true;observer.observe(document,{subtree:true,childList:true});checkPrehide();captureConfig();};
+ const present=()=>{const win=window as any;return !!(win.adobe?.target||win.targetGlobalSettings||document.getElementById('at-body-style'));};
+ helpers.onGlobal('targetGlobalSettings',()=>activate());
+ helpers.onGlobal('adobe',value=>{if(value?.target)activate();});
  let last='';
  const captureConfig=()=>{
  const target=(window as any).adobe?.target;const settings=target?.settings||(window as any).targetGlobalSettings;
@@ -39,8 +44,8 @@ export function installTargetTiming(helpers:HookHelpers) {
  const config={hasGetOffers:typeof target?.getOffers==='function',version:target?.VERSION,clientCode:settings?.clientCode,globalMboxName:settings?.globalMboxName,timeout:settings?.timeout,decisioningMethod:settings?.decisioningMethod,bodyHiddenStyle:settings?.bodyHiddenStyle};
  const next=JSON.stringify(config);if(next!==last){last=next;emit('Target configuration observed',{schema:'target-config-v1',config});}
  };
- captureConfig();const timer=setInterval(captureConfig,2000);
- helpers.addCleanup(()=>{observer.disconnect();clearInterval(timer);pending.clear();});
+ helpers.poll(()=>{if(!active){if(present())activate();return;}captureConfig();});
+ helpers.addCleanup(()=>{observer.disconnect();pending.clear();});
  return (r:TargetWire)=>{
  if(!r.target||r.pipe==='ode')return;
  walk(r.response,node=>{const selector=node.cssSelector||node.selector;if(typeof selector!=='string'||selector.length>2000||pending.size>=100)return;try{pending.set(selector,{page:r.page,start:r.at,response:Date.now(),before:document.querySelector(selector)?.outerHTML.slice(0,12000)||''});watch(true);}catch{}});

@@ -12,9 +12,9 @@ function fakeHelpers() {
     emit: (event: any) => emitted.push(event), listen: (name: string, handler: any) => listeners.set(name, handler),
     wrapQueue: (name: string, platform: string, eventName: any, category: any) => queues.push({ name, platform, eventName, category }),
     wrapMethod: (target: any, method: string, platform: string, eventName: any, category: any, observe: any, link: any) => methods.push({ method, platform, eventName, category, observe, link }),
-    globals: new Map<string, (value: any) => void>(),
+    polls: [] as Array<() => void>, globals: new Map<string, (value: any) => void>(),
     onGlobal(name: string, apply: (value: any) => void) { helpers.globals.set(name, apply); const v = (globalThis as any).window?.[name]; if (v != null) apply(v); },
-    clean: (v: unknown) => v, addExperiment() {}, invalidate() {}, addCleanup: (fn: () => void) => cleanups.push(fn)
+    clean: (v: unknown) => v, addExperiment() {}, invalidate() {}, addCleanup: (fn: () => void) => cleanups.push(fn), poll: (fn: () => void) => { helpers.polls.push(fn); fn(); return () => {}; }
   };
   return { helpers, emitted, listeners, queues, methods };
 }

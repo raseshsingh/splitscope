@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.0
+
+Phase 3 of the extension review: safe and light on every site.
+
+Lighter on pages
+- One shared scheduler replaces the per adapter 500 ms timers (Statsig, PostHog, GrowthBook, analytics). It runs every 500 ms for 30 seconds after load or a route change, then every 5 seconds, and not at all in hidden tabs.
+- Snapshots are compared by a cheap fingerprint before the full serialization, so unchanged pages no longer re-serialize up to 3.3 MB each scan. A 15 second heartbeat still refreshes raw detail.
+- With the panel closed the page is scanned at most every 10 seconds (enough for the toolbar badge); opening the panel triggers a fresh scan.
+- The Adobe Target timing observer and configuration check start only once Target is present (targetGlobalSettings, adobe.target or the prehide style), instead of on every site.
+- The background only listens for image beacons on supported vendor domains and for Adobe Analytics /b/ss/ hits, instead of every image on every site.
+
+Storage
+- Local storage now has a budget of about 6 MB. Adobe Target experience memory and saved QA links expire after 30 days; when space runs short, automatic captures go first, oldest first, then saved QA links, then workspaces.
+- Saved event logs clip long strings.
+- Settings shows how much is stored and has "Clear all Splitscope data" (settings are kept).
+
+Trust and privacy
+- The page hook answers the connection request only until the panel bridge connects, so page scripts can no longer obtain the channel later.
+- Preview plans and preview errors are accepted only as answers to a request the panel sent.
+- VWO and Kameleoon preview links carry a one time token issued in this browser (valid 10 minutes). A forwarded or emailed link no longer changes a visitor's variation.
+- Redaction covers API keys, client secrets, session IDs, Bearer and Basic credentials, JWTs, URL encoded emails, fragment tokens, header pairs, and name, address, birth date and card fields. A table driven test covers it.
+- The activeTab permission is removed (scripting plus host access already cover it).
+- After an extension update or reload, the re-injected page hook stops the old one instead of being blocked by it, and a closing bridge stops its hook. The install flag is now a private symbol, not a window property.
+
 ## 0.8.0
 
 Phase 2 of the extension review: make the main jobs faster.

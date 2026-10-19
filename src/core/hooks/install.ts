@@ -19,10 +19,15 @@ export interface HookSnapshot {
   page: { title: string; referrer: string; readyState: string };
 }
 
+const HOOK_KEY = Symbol.for('splitscope.hook');
+
 export function installHookEngine(adapters: PageAdapter[]): void {
-  const globalWindow = window as unknown as AnyRecord;
-  if (globalWindow.__splitscopeHookInstalled) return;
-  globalWindow.__splitscopeHookInstalled = true;
+  // A re-injected hook (after an extension update or reload) replaces the running one instead of being blocked by it.
+  // The handle is a non-enumerable symbol, not a named window property.
+  const existing = (window as any)[HOOK_KEY] as { stop?: () => void } | undefined;
+  if (existing) { try { existing.stop?.(); } catch {} }
+  const handle = { stop: () => stop() };
+  try { Object.defineProperty(window, HOOK_KEY, { value: handle, configurable: true, enumerable: false }); } catch {}
   const nonce = makeNonce();
   const queued: Array<{ type: 'snapshot' | 'event' | 'status'; payload: unknown }> = [];
   const cleanups: Array<() => void> = [];
@@ -37,7 +42,22 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     const from = observedPage;
     previousObserved = new Map([...observed].map(([key, item]) => [key, { ...item, status: 'unknown' as const, statusReason: `Observed on the previous page (${(() => { try { return new URL(from).pathname; } catch { return from; } })()}). Not seen on this page yet.`, evidence: item.evidence ? { ...item.evidence, state: 'detected' as const } : undefined }]));
     observed.clear(); evidenceTimes.clear(); observedPage = pageKey();
+    pollBoost = performance.now();
   };
+  // One shared timer for every adapter's attach loop: fast while a page settles, slow afterwards, idle in hidden tabs.
+  const pollTasks = new Set<{ run: () => void; next: number }>();
+  let pollBoost = performance.now();
+  const poll = (run: () => void) => {
+    const task = { run, next: 0 };
+    pollTasks.add(task);
+    try { run(); } catch {}
+    return () => { pollTasks.delete(task); };
+  };
+  const pollTimer = window.setInterval(() => {
+    if (document.hidden || !pollTasks.size) return;
+    const now = performance.now(), fast = now - pollBoost < 30000;
+    for (const task of pollTasks) { if (now < task.next) continue; task.next = now + (fast ? 500 : 5000); try { task.run(); } catch {} }
+  }, 500);
   const evidenceTimes = new Map<string, { signature: string; at: number }>();
   let analyticsEnabled = false;
   let refreshAnalytics = () => {};
@@ -53,12 +73,20 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const adapterById = new Map(adapters.map((adapter) => [adapter.id, adapter]));
 
   let lastSnapshotKey = '';
+  let lastSignature = '';
+  let panelOpen = false;
   let lastSnapshotSent = 0;
   let scanCost = 0;
   let lastPublishAt = 0;
   const post = (type: 'snapshot' | 'event' | 'status', payload: unknown) => {
     const targetWire = type === 'event' && (payload as any)?.properties?.schema === 'target-wire-v1';
     if (stopped) return;
+    if (type === 'snapshot' && connected) {
+      // A cheap fingerprint first: most scans change nothing, and serializing can cost megabytes.
+      const signature = snapshotSignature(payload as HookSnapshot);
+      if (signature && signature === lastSignature && performance.now() - lastSnapshotSent < 15000) return;
+      lastSignature = signature;
+    }
     const clean = type === 'snapshot' ? serializeSnapshot(payload as HookSnapshot) : sanitize(payload, targetWire ? 400_000 : 200_000, targetWire ? 20 : 10);
     if (type === 'snapshot' && connected) {
       // Skip unchanged snapshots (apart from a periodic heartbeat) so large projects do not re-send megabytes every scan.
@@ -148,7 +176,8 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       observed.set(`${experiment.platform}:${experiment.id}`, { ...experiment, evidence: experiment.evidence || { state: experiment.status === 'running-in' ? 'assigned' : experiment.status === 'bucketed-elsewhere' ? 'stored' : 'detected', observedAt: Date.now(), pageUrl: location.href } });
     },
     invalidate(platform) { for (const [key, item] of observed) if (item.platform === platform) observed.delete(key); for (const [key, item] of previousObserved) if (item.platform === platform) previousObserved.delete(key); },
-    addCleanup(fn) { cleanups.push(fn); }
+    addCleanup(fn) { cleanups.push(fn); },
+    poll(fn) { const cancel = poll(fn); cleanups.push(cancel); return cancel; }
   };
 
   // Several watchers can follow one global (a queue wrapper and a listener registration, for example).
@@ -233,7 +262,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     // Remember how expensive a scan is so heavy pages are rescanned less often.
     scanCost = scanCost ? scanCost * 0.7 + (lastPublishAt - begin) * 0.3 : lastPublishAt - begin;
   }
-  function forcePublish(): void { lastSnapshotKey = ''; publish(); }
+  function forcePublish(): void { lastSnapshotKey = ''; lastSignature = ''; publish(); }
 
   function handleCommand(message: ReturnType<typeof parseBridgeMessage>): void {
     if (!message || message.type !== 'command' || !message.payload || typeof message.payload !== 'object') return;
@@ -260,7 +289,11 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       } catch (error) { reply({ error: String((error as any)?.message || error) }); }
       return;
     }
-    if (payload.name === 'captureOptions') { analyticsEnabled = payload.analytics === true; refreshAnalytics(); return; }
+    if (payload.name === 'captureOptions') {
+      analyticsEnabled = payload.analytics === true; refreshAnalytics();
+      if (typeof payload.panelOpen === 'boolean') { const opened = payload.panelOpen && !panelOpen; panelOpen = payload.panelOpen; if (opened) forcePublish(); }
+      return;
+    }
     if (payload.name === 'refresh' || payload.name === 'rescan') { forcePublish(); return; }
     if (payload.name === 'stop') { stop(); return; }
     if (payload.name === 'forceVariation') {
@@ -269,9 +302,9 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         if (payload.platform === 'ab-tasty') throw new Error('Use a vendor QA link for this integration.');
         const experiment = adapter?.listExperiments().find(item => item.id === String(payload.experimentId));
         if (!experiment?.variations.some(item => item.id === String(payload.variationId))) throw new Error('Variation is no longer available. Refresh first.');
-        const plan = adapter?.force?.(String(payload.experimentId), String(payload.variationId), location.href);
+        const plan = withPreviewToken(adapter?.force?.(String(payload.experimentId), String(payload.variationId), location.href) as AnyRecord | undefined);
         if (!plan) throw new Error('Variation switching is unavailable.');
-        preparedPlan = plan as AnyRecord;
+        preparedPlan = plan;
         post('status', { message: 'force-plan', requestId: message.requestId, request: { platform: payload.platform, experimentId: payload.experimentId, variationId: payload.variationId, experiment: payload.experimentName, variation: payload.variationName }, plan });
       } catch (error) { post('status', { message: 'force-error', requestId: message.requestId, error: String(error) }); }
       return;
@@ -290,14 +323,17 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     stopped = true;
     window.clearTimeout(eventRefreshTimer);
     window.clearInterval(helloTimer);
+    window.clearInterval(pollTimer); pollTasks.clear();
     cleanups.reverse().forEach((cleanup) => { try { cleanup(); } catch {} });
     window.removeEventListener('message', onWindowMessage);
+    try { if ((window as any)[HOOK_KEY] === handle) delete (window as any)[HOOK_KEY]; } catch {}
   }
 
   function onWindowMessage(event: MessageEvent): void {
     if (event.source !== window) return;
     const message = parseBridgeMessage(event.data);
-    if (message?.type === 'hello' && message.nonce === 'bootstrap') { window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello', payload: { build: EXTENSION_BUILD } }, '*'); return; }
+    // Answer the bridge's bootstrap only until it connects; afterwards the nonce is no longer handed to anyone who asks.
+    if (message?.type === 'hello' && message.nonce === 'bootstrap') { if (connected) return; window.postMessage({ namespace: '__splitscope__', nonce, type: 'hello', payload: { build: EXTENSION_BUILD } }, '*'); return; }
     if (!message || message.nonce !== nonce) return;
     if (message.type === 'ready') {
       connected = true;
@@ -312,7 +348,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   for (const adapter of adapters) {
     try { adapter.install(helpers); } catch (error) { diagnostic('hook', `Could not install ${adapter.displayName} hooks`, error); }
   }
-  refreshAnalytics = installAnalytics(emit, () => analyticsEnabled, cleanups);
+  refreshAnalytics = installAnalytics(emit, () => analyticsEnabled, cleanups, poll);
   installNetworkHooks(emit, cleanups, () => analyticsEnabled);
   installHistoryHooks(emit, cleanups, publish);
   const retryUntilReady = () => {
@@ -323,7 +359,8 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   publish();
   // Rescan every 1.5s while the page settles, then every 3s: long-lived pages stop paying for rescans nobody needs.
   let scanTick = 0;
-  const scanTimer = window.setInterval(() => { scanTick++; if (document.hidden || (performance.now() - started > 30000 && scanTick % 2)) return; if (performance.now() - lastPublishAt < Math.min(20000, scanCost * 12)) return; publish(); }, 1500);
+  // With the panel closed only the toolbar badge needs data, so scan at most every 10 seconds.
+  const scanTimer = window.setInterval(() => { scanTick++; if (document.hidden || (performance.now() - started > 30000 && scanTick % 2)) return; const since = performance.now() - lastPublishAt; if (since < Math.min(20000, scanCost * 12) || (!panelOpen && connected && since < 10000)) return; publish(); }, 1500);
   cleanups.push(() => window.clearInterval(scanTimer));
 
   function executeForcePlan(plan: AnyRecord): void {
@@ -345,23 +382,27 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   }
 }
 
+/** Changes whenever anything the panel lists changes; raw detail alone is refreshed by the 15 second heartbeat. */
+export function snapshotSignature(snapshot: HookSnapshot): string {
+  try {
+    return JSON.stringify([snapshot.url, snapshot.page.title, snapshot.platforms.map(p => [p.id, p.result.state, p.result.confidence, p.result.signals.length]),
+      snapshot.experiments.map(e => { let value = ''; try { value = JSON.stringify(e.evaluatedValue)?.slice(0, 200) ?? ''; } catch {} return [e.platform, e.id, e.name, e.status, e.statusReason, e.assignedVariationId, e.kind, e.evidence?.state, e.evidence?.observedAt, value, e.changes?.length, e.variations.map(v => [v.id, v.name, v.weight, v.changes?.length])]; })]);
+  } catch { return ''; }
+}
+
 function applyPendingForce(report: (message: string, error?: unknown) => void): void {
   try {
     const url = new URL(location.href);
     const vwoMarker = url.searchParams.get('__splitscope_vwo');
-    if (vwoMarker !== null) {
-      url.searchParams.delete('__splitscope_vwo');
+    const kameleoonMarker = url.searchParams.get('__splitscope_kameleoon');
+    if (vwoMarker !== null || kameleoonMarker !== null) {
+      // A marker applies only with a one time token this browser issued when the user chose the preview,
+      // so a shared or emailed link cannot rebucket a visitor.
+      const token = url.searchParams.get('__splitscope_token');
+      for (const name of ['__splitscope_vwo', '__splitscope_kameleoon', '__splitscope_token']) url.searchParams.delete(name);
       history.replaceState(history.state, '', url.href);
-      if (!/^\d+:\d+$/.test(vwoMarker)) throw new Error('Invalid VWO preview IDs.');
-      const [experimentId, variationId] = vwoMarker.split(':');
-      const win = window as any;
-      (win.VWO || (win.VWO = [])).push(['setVariation', [{ e: experimentId, v: variationId }]]);
-    }
-    const marker = url.searchParams.get('__splitscope_kameleoon');
-    if (marker !== null) {
-      url.searchParams.delete('__splitscope_kameleoon');
-      history.replaceState(history.state, '', url.href);
-      queueKameleoonPreview(window, marker, url.href, next => location.replace(next), report);
+      if (!consumePreviewToken(token)) { report('Ignored a preview link that was not started from Splitscope in this browser.'); }
+      else applyMarkers(vwoMarker, kameleoonMarker, url.href, report);
     }
 
     const serialized = sessionStorage.getItem('__splitscope_pending_force__');
@@ -396,6 +437,44 @@ function capabilities(id: PlatformId) {
     onesignal: { listAll: 'none', listActive: false, forceVariation: 'none', trafficSplit: 'none', changes: 'none', events: true, notes: { listAll: 'OneSignal is a messaging platform, not a page experiment platform.' } }
   };
   return data[id];
+}
+
+function applyMarkers(vwoMarker: string | null, kameleoonMarker: string | null, cleanUrl: string, report: (message: string, error?: unknown) => void): void {
+  if (vwoMarker !== null) {
+    if (!/^\d+:\d+$/.test(vwoMarker)) throw new Error('Invalid VWO preview IDs.');
+    const [experimentId, variationId] = vwoMarker.split(':');
+    const win = window as any;
+    (win.VWO || (win.VWO = [])).push(['setVariation', [{ e: experimentId, v: variationId }]]);
+  }
+  if (kameleoonMarker !== null) queueKameleoonPreview(window, kameleoonMarker, cleanUrl, next => location.replace(next), report);
+}
+
+const TOKEN_STORE = '__splitscope_preview_tokens__';
+function readPreviewTokens(now: number): Record<string, number> {
+  const tokens: Record<string, number> = {};
+  try {
+    const stored = JSON.parse(localStorage.getItem(TOKEN_STORE) || '{}');
+    for (const [token, expires] of Object.entries(stored || {})) if (typeof expires === 'number' && expires > now && Object.keys(tokens).length < 20) tokens[token] = expires;
+  } catch {}
+  return tokens;
+}
+function writePreviewTokens(tokens: Record<string, number>): void {
+  try { if (Object.keys(tokens).length) localStorage.setItem(TOKEN_STORE, JSON.stringify(tokens)); else localStorage.removeItem(TOKEN_STORE); } catch {}
+}
+/** Add a one time token (valid 10 minutes) to plans that carry a preview marker. */
+export function withPreviewToken(plan: AnyRecord | undefined): AnyRecord | undefined {
+  if (!plan || typeof plan.url !== 'string' || !/[?&]__splitscope_(vwo|kameleoon)=/.test(plan.url)) return plan;
+  const token = makeNonce(), now = Date.now();
+  writePreviewTokens({ ...readPreviewTokens(now), [token]: now + 600_000 });
+  const url = new URL(plan.url); url.searchParams.set('__splitscope_token', token);
+  return { ...plan, url: url.href };
+}
+export function consumePreviewToken(token: string | null): boolean {
+  if (!token) return false;
+  const tokens = readPreviewTokens(Date.now());
+  const valid = Object.prototype.hasOwnProperty.call(tokens, token);
+  delete tokens[token]; writePreviewTokens(tokens);
+  return valid;
 }
 
 function makeNonce(): string {
