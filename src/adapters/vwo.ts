@@ -7,7 +7,7 @@ export const vwoAdapter: PageAdapter = {
   id: 'vwo', displayName: 'VWO', category: 'experimentation',
   detect() {
     const win = window as any;
-    if (win.VWO || win._vwo_exp || win._vwo_code || win._vis_opt_queue) return detection(win.VWO ? 'active' : 'loading', ['VWO runtime global'], win.VWO ? 0.98 : 0.82);
+    if (win.VWO || win.Wingify || win._vwo_exp || win._vwo_code || win._vis_opt_queue) return detection(win.VWO || win.Wingify ? 'active' : 'loading', [win.Wingify ? 'Wingify (VWO) runtime global' : 'VWO runtime global'], win.VWO || win.Wingify ? 0.98 : 0.82);
     if (document.querySelector('script[src*="visualwebsiteoptimizer"],script[src*="dev.visualwebsiteoptimizer.com"]')) return detection('loading', ['VWO SmartCode script'], 0.7);
     return detection('blocked', [], 0);
   },
@@ -58,8 +58,40 @@ export const vwoAdapter: PageAdapter = {
     });
   },
   install(helpers) {
-    helpers.wrapQueue('VWO', 'vwo', (args) => String((args[0] as any)?.[0] || 'VWO.push'), 'custom');
-    helpers.wrapQueue('_vis_opt_queue', 'vwo', (args) => String((args[0] as any)?.[0] || '_vis_opt_queue.push'), 'custom');
+    // Lifecycle hooks follow the documented onEventReceive API: push(['onEventReceive', code, callback]),
+    // where the callback receives [eventName, campaignId, third], third being the variation for vA/vAE and the goal for rC.
+    const lifecycle: Record<string, { name: string; category: 'activation' | 'goal' | 'error' | 'decision' }> = { vA: { name: 'Variation applied', category: 'activation' }, vAE: { name: 'Variation could not be applied', category: 'error' }, rC: { name: 'Goal conversion', category: 'goal' }, tNR: { name: 'Test not running', category: 'decision' } };
+    const registered = new Set<string>();
+    const targets = new WeakSet<object>();
+    const register = () => {
+      for (const space of ['Wingify', 'VWO']) {
+        const target = (window as any)[space];
+        if (registered.has(space) || !target || typeof target.push !== 'function') continue;
+        registered.add(space);
+        // Both names can point at the same object; register once per object.
+        if (targets.has(target)) continue;
+        targets.add(target);
+        for (const [code, info] of Object.entries(lifecycle)) {
+          const callback = (data: unknown) => {
+            const values = Array.isArray(data) ? data : [];
+            const campaignId = values[1] == null ? undefined : String(values[1]);
+            const third = values[2] == null ? undefined : String(values[2]);
+            helpers.emit({ platform: 'vwo', category: info.category, name: code === 'rC' && third ? `Goal conversion: ${third}` : info.name, via: 'listener', experimentId: campaignId, variationId: code === 'vA' || code === 'vAE' ? third : undefined, properties: { code, goalId: code === 'rC' ? third : undefined, data: sanitize(values) } });
+          };
+          Object.defineProperty(callback, '__splitscope', { value: true });
+          try { target.push(['onEventReceive', code, callback]); } catch {}
+        }
+      }
+    };
+    register();
+    const timer = window.setInterval(register, 500);
+    helpers.addCleanup(() => window.clearInterval(timer));
+    const queueName = (space: string) => (args: unknown[]) => { const item = args[0] as any; return Array.isArray(item) ? `${space}.push: ${String(item[0] ?? 'command')}` : typeof item === 'function' ? `${space}.push: function` : `${space}.push`; };
+    helpers.wrapQueue('Wingify', 'vwo', queueName('Wingify'), 'lifecycle');
+    helpers.wrapQueue('VWO', 'vwo', queueName('VWO'), 'lifecycle');
+    helpers.wrapQueue('_vis_opt_queue', 'vwo', queueName('_vis_opt_queue'), 'lifecycle');
+    // Documented custom event call: Wingify.event(eventName, attributes).
+    for (const space of ['Wingify', 'VWO']) helpers.wrapMethod(() => (window as any)[space], 'event', 'vwo', (args) => String(args[0] ?? 'Custom event'), 'custom');
   },
   force(experimentId, variationId, pageUrl) {
     const url = new URL(pageUrl);

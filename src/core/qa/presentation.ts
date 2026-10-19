@@ -9,6 +9,23 @@ export const pretty = (value: unknown) => JSON.stringify(value, null, 2) ?? Stri
 export function relatedEvents(events: CapturedEvent[], activity: NormalizedExperiment) {
   return events.filter((event) => event.platform === activity.platform && event.experimentId === activity.id);
 }
+const businessCategories = ['custom', 'goal', 'revenue'];
+/**
+ * Events that belong to an activity, split by how sure the link is:
+ * linked (the event names this activity), metric (the event name matches one of the activity's goals),
+ * and platform (goal or custom events sent to the same platform while this activity is active on the page,
+ * which the platform credits to every active activity that tracks them).
+ */
+export function activityEvents(events: CapturedEvent[], activity: NormalizedExperiment) {
+  const linked = relatedEvents(events, activity);
+  const goalKeys = new Set((activity.goals || []).flatMap(goal => [goal.id, goal.name]).filter((value): value is string => Boolean(value)).map(value => value.toLowerCase()));
+  const rest = events.filter(event => event.platform === activity.platform && !linked.includes(event) && !event.experimentId);
+  // A goal event matches by its name or by a goal ID or name the adapter recorded in its properties.
+  const eventKeys = (event: CapturedEvent) => { const p = (event.properties && typeof event.properties === 'object' ? event.properties : {}) as Record<string, unknown>; return [event.name, event.name.replace(/^[^:]+:\s*/, ''), p.goalId, p.goalName, p.goal_id].filter(value => value != null && value !== '').map(value => String(value).toLowerCase()); };
+  const metric = goalKeys.size ? rest.filter(event => eventKeys(event).some(key => goalKeys.has(key))) : [];
+  const platform = isActive(activity) ? rest.filter(event => !metric.includes(event) && businessCategories.includes(event.category)) : [];
+  return { linked, metric, platform };
+}
 export function mergeEvents(...batches: CapturedEvent[][]): CapturedEvent[] {
   const byId = new Map<string, CapturedEvent>();
   for (const events of batches) for (const event of events) byId.set(event.id, event);
@@ -36,4 +53,27 @@ export function activityStatus(item: NormalizedExperiment): string {
   if (item.status === 'running-in') return 'Assigned / delivered';
   if (item.status === 'unknown') return 'Detected only';
   return statusNames[item.status] || item.status;
+}
+
+/**
+ * Many platforms report one action twice: the site's API call (which Splitscope observes) and the platform's own
+ * listener or DOM event a moment later (for example Optimizely's trackEvent listener, Kameleoon::ConversionTriggered
+ * or Convert's goal.triggered). Return the index of the API call an incoming listener event confirms, or -1.
+ */
+export function confirmedCallIndex(events: CapturedEvent[], incoming: CapturedEvent, windowMs = 2000): number {
+  if (incoming.via !== 'listener' && incoming.via !== 'dom-event') return -1;
+  const props = (incoming.properties && typeof incoming.properties === 'object' && !Array.isArray(incoming.properties) ? incoming.properties : {}) as Record<string, unknown>;
+  const keys = new Set([incoming.name, props.goalId, props.goalName].filter(value => value != null && value !== '').map(value => String(value).toLowerCase()));
+  const tail = (name: string) => name.replace(/^[^:]+:\s*/, '').toLowerCase();
+  for (let index = events.length - 1; index >= 0 && index >= events.length - 50; index--) {
+    const event = events[index]!;
+    if (incoming.t - event.t > windowMs) break;
+    if (event.via !== 'api-call' || event.platform !== incoming.platform || event.confirmedBy || Math.abs(incoming.t - event.t) > windowMs) continue;
+    if (event.experimentId && incoming.experimentId && event.experimentId !== incoming.experimentId) continue;
+    if (keys.has(event.name.toLowerCase()) || keys.has(tail(event.name))) return index;
+  }
+  return -1;
+}
+export function mergeConfirmation(call: CapturedEvent, incoming: CapturedEvent): CapturedEvent {
+  return { ...call, experimentId: call.experimentId ?? incoming.experimentId, variationId: call.variationId ?? incoming.variationId, confirmedBy: incoming.via === 'dom-event' ? 'dom-event' : 'listener', confirmation: incoming.properties };
 }

@@ -424,3 +424,15 @@ Also new in 0.4.0: `ui/shared/ConfirmModal.tsx` is the shared confirmation dialo
 ## Changes in 0.5.0 (Reset visitor)
 
 `core/visitor-reset.ts` holds the pure logic: `resetRules` (cookie and storage name patterns per platform, split into assignment and identity groups), `planReset` (what exists now), `runReset` (expire cookies on the host and parent domains and remove storage keys, then report what remains) and `browserEnv`. `ui/qa/ResetVisitor.tsx` is the screen, reached from Tools, Reset visitor. It runs in the content script, which shares cookies and storage with the page, so no hook or background message is needed. Add a platform by adding an entry to `resetRules`.
+
+## Changes in 0.6.0 (platform tools)
+
+A platform adapter can now declare `actions`, a map of page world functions the panel can call. The panel calls `onPlatformAction(platform, action, args)`, which `entrypoints/bridge.content.tsx` turns into a `platformAction` command with a request ID. The hook (`core/hooks/install.ts`, `handleCommand`) runs the action and answers with a `status` message of `platform-result`, which the bridge matches to the waiting promise (8 second timeout). Results must be plain data and are sanitized on the way out.
+
+Optimizely: actions live in `adapters/optimizely.ts` (visitor, setAttribute, setPage, trackEvent, audiences). `core/optimizely/audiences.ts` evaluates audience conditions in the panel, with unknown as a third result. The UI is `ui/qa/OptimizelyTools.tsx`. The last seen snippet revision per project is stored in `Workspace.revisions`.
+
+Kameleoon: actions live in `adapters/kameleoon.ts` (visitor, experiments, setCustomData, resetCustomData, processConversion, setConsent, block, reevaluateSegment), following the Kameleoon Activation API. The UI is `ui/qa/KameleoonTools.tsx`. Both tool screens appear as extra tabs under Tools when their platform is detected. To add tools for another platform, add `actions` to its adapter and a screen that calls `onPlatformAction`.
+
+## Changes in 0.6.1 (polish)
+
+Navigation with many items uses `.ss-chips` (wrapping pill buttons): the Tools menu in `App.tsx` and the Adobe Target tool menu in `TargetView.tsx`. Platform sub tabs keep the underline `.ss-tabs`. The hook (`install.ts`) now skips posting a snapshot whose content (ignoring `capturedAt`) matches the previous one, except for a 15 second heartbeat, and spaces scans by the measured scan cost (`scanCost`). `forcePublish` bypasses the dedupe for Rescan and for the first snapshot after connecting.

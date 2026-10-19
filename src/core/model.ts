@@ -106,6 +106,9 @@ export interface CapturedEvent {
   caller?: string;
   networkRef?: string;
   raw?: unknown;
+  /** Set when the platform's own listener reported the same call, so one action shows as one row. */
+  confirmedBy?: 'listener' | 'dom-event';
+  confirmation?: unknown;
 }
 
 export interface PlatformAdapter {

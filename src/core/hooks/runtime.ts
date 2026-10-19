@@ -4,6 +4,8 @@ import { sanitize } from '../sanitize';
 import type { CapturedEvent, DataSource, DetectionResult, NormalizedChange, NormalizedExperiment, NormalizedVariation, PlatformId } from '../model';
 
 export type AnyRecord = Record<string, any>;
+/** A fixed category, or one chosen from the call arguments. */
+export type EventCategory = CapturedEvent['category'] | ((args: unknown[]) => CapturedEvent['category'] | undefined);
 export type RuntimeEmitter = (event: Omit<CapturedEvent, 'id' | 't'>) => void;
 
 export interface PageAdapter {
@@ -14,12 +16,14 @@ export interface PageAdapter {
   listExperiments(): NormalizedExperiment[];
   install(helpers: HookHelpers): void;
   force?: (experimentId: string, variationId: string, pageUrl: string) => unknown;
+  /** Page world actions the panel can request, such as reading visitor data or setting an attribute. Results must be plain data. */
+  actions?: Record<string, (args: AnyRecord) => unknown | Promise<unknown>>;
 }
 
 export interface HookHelpers {
   emit: RuntimeEmitter;
-  wrapQueue(name: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: CapturedEvent['category']): void;
-  wrapMethod(target: AnyRecord | undefined | (() => AnyRecord | undefined), method: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: CapturedEvent['category'], observe?: (args: unknown[], result: unknown) => void): void;
+  wrapQueue(name: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: EventCategory): void;
+  wrapMethod(target: AnyRecord | undefined | (() => AnyRecord | undefined), method: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: EventCategory, observe?: (args: unknown[], result: unknown) => void, link?: (args: unknown[]) => { experimentId?: string; variationId?: string } | undefined): void;
   listen(name: string, handler: (event: Event) => void): void;
   clean(value: unknown): unknown;
   addExperiment(experiment: NormalizedExperiment): void;

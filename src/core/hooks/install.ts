@@ -42,10 +42,21 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const win = window as unknown as AnyRecord;
   const adapterById = new Map(adapters.map((adapter) => [adapter.id, adapter]));
 
+  let lastSnapshotKey = '';
+  let lastSnapshotSent = 0;
+  let scanCost = 0;
+  let lastPublishAt = 0;
   const post = (type: 'snapshot' | 'event' | 'status', payload: unknown) => {
     const targetWire = type === 'event' && (payload as any)?.properties?.schema === 'target-wire-v1';
     if (stopped) return;
     const clean = type === 'snapshot' ? serializeSnapshot(payload as HookSnapshot) : sanitize(payload, targetWire ? 400_000 : 200_000, targetWire ? 20 : 10);
+    if (type === 'snapshot' && connected) {
+      // Skip unchanged snapshots (apart from a periodic heartbeat) so large projects do not re-send megabytes every scan.
+      let key = ''; try { key = JSON.stringify({ ...(clean as AnyRecord), capturedAt: 0 }); } catch {}
+      const now = performance.now();
+      if (key && key === lastSnapshotKey && now - lastSnapshotSent < 15000) return;
+      lastSnapshotKey = key; lastSnapshotSent = now;
+    }
     if (!connected && queued.length < 1000) queued.push({ type, payload: clean });
     else window.postMessage({ namespace: '__splitscope__', nonce, type, payload: clean }, '*');
   };
@@ -68,7 +79,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     };
     post('event', normalized);
     if (adapterById.has(event.platform as PlatformId)) observedPlatforms.add(event.platform as PlatformId);
-    if (!eventRefreshTimer) eventRefreshTimer = window.setTimeout(() => { eventRefreshTimer = 0; publish(); }, 100);
+    if (!eventRefreshTimer) eventRefreshTimer = window.setTimeout(() => { eventRefreshTimer = 0; publish(); }, Math.max(100, Math.min(5000, scanCost * 4)));
     } catch { /* Observation must not interrupt the site's original API or request. */ }
   };
 
@@ -78,10 +89,10 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       trapGlobal(name, (value) => helpers.wrapMethod(value as AnyRecord, 'push', platform, eventName, category));
       refreshHooks.push(() => helpers.wrapMethod(win[name], 'push', platform, eventName, category));
     },
-    wrapMethod(target, method, platform, eventName, category, observe) {
+    wrapMethod(target, method, platform, eventName, category, observe, link) {
       if (typeof target === 'function') {
         const resolve = target;
-        const attach = () => { try { helpers.wrapMethod(resolve(), method, platform, eventName, category, observe); } catch {} };
+        const attach = () => { try { helpers.wrapMethod(resolve(), method, platform, eventName, category, observe, link); } catch {} };
         refreshHooks.push(attach); attach(); return;
       }
       if (!target || typeof target[method] !== 'function') return;
@@ -90,7 +101,8 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       const wrapper = function (this: unknown, ...args: unknown[]) {
         try {
           const command = args[0] as AnyRecord | undefined;
-          if (!(platform === 'optimizely' && ['addListener', 'removeListener'].includes(command?.type) && String(command?.token).startsWith('splitscope:'))) emit({ platform, category: category || inferCategory(String(eventName?.(args) || method)), name: String(eventName?.(args) || method), properties: args, via: 'api-call' });
+          const linked = link?.(args);
+          if (!(platform === 'optimizely' && ['addListener', 'removeListener'].includes(command?.type) && String(command?.token).startsWith('splitscope:')) && !ownCommand(command)) emit({ ...linked, platform, category: (typeof category === 'function' ? category(args) : category) || inferCategory(String(eventName?.(args) || method)), name: String(eventName?.(args) || method), properties: args, via: 'api-call' });
         } catch {}
         const callUrl = location.href;
         const result = Reflect.apply(original, this, args);
@@ -191,7 +203,14 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     };
   }
 
-  function publish(): void { post('snapshot', scan()); }
+  function publish(): void {
+    const begin = performance.now();
+    post('snapshot', scan());
+    lastPublishAt = performance.now();
+    // Remember how expensive a scan is so heavy pages are rescanned less often.
+    scanCost = scanCost ? scanCost * 0.7 + (lastPublishAt - begin) * 0.3 : lastPublishAt - begin;
+  }
+  function forcePublish(): void { lastSnapshotKey = ''; publish(); }
 
   function handleCommand(message: ReturnType<typeof parseBridgeMessage>): void {
     if (!message || message.type !== 'command' || !message.payload || typeof message.payload !== 'object') return;
@@ -206,8 +225,20 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         post('status',{message:'Target probe completed; inspect Events and Target Raw.'});
       }).catch(error=>post('status',{error:String(error)})); return;
     }
+    if (payload.name === 'platformAction') {
+      const adapter = adapterById.get(payload.platform as PlatformId);
+      const action = typeof payload.action === 'string' ? payload.action : '';
+      const reply = (body: AnyRecord) => post('status', { message: 'platform-result', requestId: message.requestId, platform: payload.platform, action, ...body });
+      try {
+        const handler = adapter?.actions && Object.prototype.hasOwnProperty.call(adapter.actions, action) ? adapter.actions[action] : undefined;
+        if (!handler) throw new Error('This action is not available for this platform.');
+        const args = payload.args && typeof payload.args === 'object' && !Array.isArray(payload.args) ? payload.args as AnyRecord : {};
+        void Promise.resolve().then(() => handler.call(adapter, args)).then(result => { reply({ result }); publish(); }, error => reply({ error: String((error as any)?.message || error) }));
+      } catch (error) { reply({ error: String((error as any)?.message || error) }); }
+      return;
+    }
     if (payload.name === 'captureOptions') { analyticsEnabled = payload.analytics === true; refreshAnalytics(); return; }
-    if (payload.name === 'refresh' || payload.name === 'rescan') { publish(); return; }
+    if (payload.name === 'refresh' || payload.name === 'rescan') { forcePublish(); return; }
     if (payload.name === 'stop') { stop(); return; }
     if (payload.name === 'forceVariation') {
       const adapter = adapterById.get(payload.platform as PlatformId);
@@ -249,7 +280,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       connected = true;
       window.clearInterval(helloTimer);
       for (const item of queued.splice(0)) window.postMessage({ namespace: '__splitscope__', nonce, ...item }, '*');
-      publish();
+      forcePublish();
     } else if (message.type === 'command') handleCommand(message);
   }
 
@@ -269,7 +300,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   publish();
   // Rescan every 1.5s while the page settles, then every 3s: long-lived pages stop paying for rescans nobody needs.
   let scanTick = 0;
-  const scanTimer = window.setInterval(() => { scanTick++; if (document.hidden || (performance.now() - started > 30000 && scanTick % 2)) return; publish(); }, 1500);
+  const scanTimer = window.setInterval(() => { scanTick++; if (document.hidden || (performance.now() - started > 30000 && scanTick % 2)) return; if (performance.now() - lastPublishAt < Math.min(20000, scanCost * 12)) return; publish(); }, 1500);
   cleanups.push(() => window.clearInterval(scanTimer));
 
   function executeForcePlan(plan: AnyRecord): void {
@@ -353,6 +384,15 @@ function captureCaller(): string | undefined {
     const frame = new Error().stack?.split('\n').slice(2).find((line) => !line.includes('chrome-extension://') && !line.includes('splitscope'));
     return frame?.trim().slice(0, 500);
   } catch { return undefined; }
+}
+
+/** Commands Splitscope itself queues (listener registrations) are marked so they are not logged as site activity. */
+function ownCommand(command: unknown): boolean {
+  const marked = (value: unknown) => typeof value === 'function' && (value as AnyRecord).__splitscope === true;
+  if (!command || typeof command !== 'object') return false;
+  const item = command as AnyRecord;
+  if (Array.isArray(item)) return item.some(marked);
+  return marked(item.handler) || marked(item.params?.handler) || marked(item.command);
 }
 
 function inferCategory(name: string): CapturedEvent['category'] {

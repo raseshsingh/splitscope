@@ -113,6 +113,64 @@ function activityKind(raw: AnyRecord, campaign?: AnyRecord): NormalizedExperimen
   return 'other';
 }
 
+function api(): AnyRecord {
+  const opt = (window as any).optimizely;
+  if (!opt || typeof opt.push !== 'function' || typeof opt.get !== 'function') throw new Error('Optimizely Web is not available on this page.');
+  return opt;
+}
+function definitions(value: unknown): Map<string, AnyRecord> {
+  const map = new Map<string, AnyRecord>();
+  for (const [key, item] of entries(value)) map.set(String(item.id ?? key), item);
+  return map;
+}
+function primitive(value: unknown): unknown {
+  if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) return value;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+/** Read the visitor without changing anything. Field names follow the documented visitor object but are read defensively. */
+function readVisitor(opt: AnyRecord, data: AnyRecord) {
+  let visitor: AnyRecord = {};
+  try { visitor = opt.get('visitor') || {}; } catch {}
+  let idValue: any; try { idValue = opt.get('visitor_id'); } catch {}
+  const visitorId = visitor.visitorId ?? (typeof idValue === 'string' ? idValue : idValue?.randomId ?? idValue?.visitorId);
+  const defs = new Map([...definitions(data.visitorAttributes), ...definitions(data.attributes), ...definitions(data.customAttributes)]);
+  const custom: AnyRecord = visitor.custom && typeof visitor.custom === 'object' ? visitor.custom : {};
+  const attributes = Object.entries(custom).map(([key, item]: [string, any]) => {
+    const id = String(item?.id ?? key);
+    const def = defs.get(id);
+    const value = item && typeof item === 'object' && 'value' in item ? item.value : item;
+    return { id, name: String(def?.name || def?.apiName || def?.key || id), apiName: def?.apiName || def?.key ? String(def.apiName || def.key) : undefined, value: primitive(value), defined: Boolean(def) };
+  });
+  for (const [id, def] of defs) if (!attributes.some(item => item.id === id)) attributes.push({ id, name: String(def.name || def.apiName || def.key || id), apiName: def.apiName || def.key ? String(def.apiName || def.key) : undefined, value: undefined, defined: true });
+  let pages: Array<Record<string, unknown>> = [];
+  try { pages = Object.values(opt.get('state')?.getPageStates?.() || {}).map((page: any) => ({ id: String(page?.id ?? ''), name: String(page?.name ?? page?.id ?? ''), apiName: page?.apiName == null ? undefined : String(page.apiName), isActive: page?.isActive === true })).slice(0, 300); } catch {}
+  if (!pages.length) pages = [...definitions(data.pages).values()].map(page => ({ id: String(page.id), name: String(page.name || page.id), apiName: page.apiName == null ? undefined : String(page.apiName), isActive: undefined })).slice(0, 300);
+  const projectEvents = [...definitions(data.events).values()].map(event => ({ id: String(event.id), name: String(event.name || event.apiName || event.id), apiName: event.apiName == null ? undefined : String(event.apiName) })).filter(event => event.apiName).slice(0, 300);
+  return { visitorId: visitorId == null ? undefined : String(visitorId), attributes: attributes.slice(0, 300), exposesAttributes: Boolean(visitor.custom && typeof visitor.custom === 'object'), pages, projectEvents, projectId: data.projectId == null ? undefined : String(data.projectId), revision: data.revision == null ? undefined : String(data.revision) };
+}
+function coerce(value: unknown, type: unknown): unknown {
+  if (type === 'number') { const number = Number(value); if (!Number.isFinite(number)) throw new Error('That is not a number.'); return number; }
+  if (type === 'boolean') return String(value).toLowerCase() === 'true';
+  return String(value ?? '');
+}
+
+/** Name and classify optimizely.push calls: custom events are metrics; page, user and other commands are not. */
+function pushName(args: unknown[]): string {
+  const command = args[0] as AnyRecord | undefined;
+  const type = String(command?.type || '');
+  if (type === 'event') return String(command?.eventName || 'Custom event');
+  if (type === 'page') return `Page ${command?.isActive === false ? 'deactivated' : 'activated'}: ${String(command?.pageName || '')}`.trim();
+  if (type === 'user') return 'Set visitor attributes';
+  return type ? `optimizely.push: ${type}` : 'optimizely.push';
+}
+function pushCategory(args: unknown[]) {
+  const type = String((args[0] as AnyRecord | undefined)?.type || '');
+  if (type === 'event') return (args[0] as AnyRecord)?.tags?.revenue != null ? 'revenue' as const : 'custom' as const;
+  if (type === 'user') return 'identity' as const;
+  if (type === 'optOut') return 'consent' as const;
+  return 'lifecycle' as const;
+}
+
 export const optimizelyAdapter: PageAdapter = {
   id: 'optimizely', displayName: 'Optimizely', category: 'experimentation',
   detect() {
@@ -204,11 +262,41 @@ export const optimizelyAdapter: PageAdapter = {
           audiences,
           conditions: pageNames.length ? pageNames.map((name) => `Optimizely page: ${name}`) : undefined
         },
-        goals: asArray(raw.metrics).map((goal: any) => { const event = data.events?.[goal?.event_id ?? goal?.eventId ?? goal?.id]; return { id: String(goal?.id ?? goal?.event_id ?? ''), name: String(goal?.name || event?.name || event?.apiName || goal?.eventName || goal?.field || 'Goal') }; }),
+        goals: asArray(raw.metrics).map((goal: any) => { const event = data.events?.[goal?.event_id ?? goal?.eventId ?? goal?.id]; return { id: String(event?.apiName ?? goal?.id ?? goal?.event_id ?? ''), name: String(goal?.name || event?.name || event?.apiName || goal?.eventName || goal?.field || 'Goal') }; }),
         source: ['snippet-data', 'runtime-api'],
         raw: sanitize({ experiment: raw, campaign, state: experimentState, campaignState, assignment, assignmentValue, selectedVariation: selected, pageIds, sections: raw.sections || raw.section_ids?.map((sectionId: string) => data.sections?.[sectionId]), runtime: typeof opt.get === 'function' ? 'web' : 'classic', globalHoldback: state.isGlobalHoldback, revision: data.revision })
       });
     });
+  },
+  actions: {
+    visitor() { const opt = api(); return readVisitor(opt, getData(opt) || {}); },
+    setAttribute(args) {
+      const opt = api(); const id = String(args.id || '');
+      if (!/^[\w.:-]{1,100}$/.test(id)) throw new Error('Choose an attribute first.');
+      opt.push({ type: 'user', attributes: { [id]: coerce(args.value, args.valueType) } });
+      return readVisitor(opt, getData(opt) || {});
+    },
+    setPage(args) {
+      const opt = api(); const name = String(args.apiName || '');
+      if (!name) throw new Error('This page has no API name, so Optimizely cannot activate it from here.');
+      opt.push({ type: 'page', pageName: name, isActive: args.isActive === true });
+      return readVisitor(opt, getData(opt) || {});
+    },
+    trackEvent(args) {
+      const opt = api(); const name = String(args.eventName || '');
+      if (!name) throw new Error('Choose an event first.');
+      opt.push({ type: 'event', eventName: name });
+      return { ok: true };
+    },
+    audiences(args) {
+      const opt = api(); const data = getData(opt) || {};
+      const indexed = indexExperiments(data).get(String(args.experimentId));
+      if (!indexed) throw new Error('That experiment is no longer in the project data.');
+      const ids = [...new Set([...strings(indexed.raw.audienceIds), ...strings(indexed.campaign?.audienceIds)])];
+      const defs = definitions(data.audiences);
+      const audiences = ids.map(id => { const def = defs.get(id); return { id, name: String(def?.name || id), conditions: def?.conditions ?? null, known: Boolean(def) }; });
+      return { audiences, visitor: readVisitor(opt, data) };
+    }
   },
   install(helpers) {
     const registered = new WeakSet<object>();
@@ -230,8 +318,8 @@ export const optimizelyAdapter: PageAdapter = {
     register();
     const timer = window.setInterval(register, 500);
     helpers.addCleanup(() => { window.clearInterval(timer); for (const dispose of disposers) dispose(); });
-    helpers.wrapQueue('optimizely', 'optimizely', (args) => String((args[0] as any)?.eventName || (args[0] as any)?.type || 'push'), 'custom');
-    helpers.wrapMethod(() => (window as any).optimizely, 'push', 'optimizely', (args) => String((args[0] as any)?.eventName || (args[0] as any)?.type || 'push'), 'custom');
+    helpers.wrapQueue('optimizely', 'optimizely', pushName, pushCategory);
+    helpers.wrapMethod(() => (window as any).optimizely, 'push', 'optimizely', pushName, pushCategory);
   },
   force(experimentId, variationId, pageUrl) {
     const url = new URL(pageUrl);

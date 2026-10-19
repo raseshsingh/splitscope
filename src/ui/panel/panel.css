@@ -187,3 +187,35 @@
 .ss-reset-group{display:flex;flex-direction:column;gap:4px}
 .ss-reset-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px solid var(--border)}
 .ss-reset-row code{min-width:0}
+.ss-opt{margin:0}
+.ss-opt .ss-tabs{margin:0 0 4px;padding:0}
+.ss-qa-pair{display:grid;grid-template-columns:1.6fr 1fr;gap:8px}
+.ss-aud{display:flex;flex-direction:column;gap:8px}
+.ss-aud-node{padding:3px 0}.ss-aud-row{display:flex;gap:8px;align-items:flex-start}.ss-aud-row .ss-tag{flex:none}
+.ss-aud-children{margin-left:10px;padding-left:10px;border-left:1px solid var(--border)}
+.ss-app .ss-qa-field select{width:100%}
+/* 0.6.1 polish */
+.ss-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.ss-chips button{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:99px;padding:4px 11px;font-size:12px;line-height:1.4;white-space:nowrap}
+.ss-chips button:hover{border-color:var(--brand);color:var(--ink)}
+.ss-chips button.ss-selected{background:var(--tint);border-color:var(--brand);color:var(--ink);font-weight:600}
+.ss-note>strong,.ss-note>b:first-child{display:block}
+.ss-note>strong+span{display:block}
+.ss-qa-list li{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;column-gap:10px}
+.ss-qa-list li>.ss-qa-name{flex:1 1 160px}
+.ss-qa-list li>small,.ss-qa-list li>.ss-full{flex-basis:100%}
+.ss-qa-list li>code{max-width:60%;text-align:right}
+.ss-split span{background:var(--border)}.ss-split span:nth-child(even){background:color-mix(in srgb,var(--border) 60%,var(--muted))}.ss-split span.ss-assigned{background:var(--amber)}
+.ss-bar i{background:color-mix(in srgb,var(--muted) 55%,transparent)}.ss-me .ss-bar i{background:var(--amber)}.ss-variation.ss-me .ss-assigned-label{color:var(--amber)}
+/* Target tool content: forms and text written without component classes */
+.ss-target label:not(.ss-setting):not(.ss-qa-field){display:block;font-weight:600;font-size:.88em;margin:10px 0 0}
+.ss-target label:not(.ss-setting):not(.ss-qa-field)>input:not([type=checkbox]),.ss-target label:not(.ss-setting):not(.ss-qa-field)>select,.ss-target label:not(.ss-setting):not(.ss-qa-field)>textarea{display:block;width:100%;margin-top:4px;font-weight:400}
+.ss-target h2{font-size:13px;margin:16px 0 6px}
+.ss-target>p:not([class]),.ss-target article>p:not([class]),.ss-target>section>p:not([class]){font-size:.88em;color:var(--muted);margin:6px 0}
+.ss-target .ss-button+.ss-button,.ss-target .ss-button+.ss-link,.ss-target .ss-link+.ss-button{margin-left:6px}
+.ss-target .ss-button{margin-top:8px}
+.ss-target .ss-tags{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px}
+.ss-target .ss-tags:empty{display:none}
+.ss-app .ss-h{margin:20px 0 6px;display:flex;align-items:center;gap:6px}.ss-app .ss-h:first-child{margin-top:4px}
+.ss-setting+p.ss-caption{margin-top:8px}
+.ss-assoc{margin-top:14px}.ss-assoc-row{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}.ss-assoc-row>.ss-tag{align-self:flex-start}

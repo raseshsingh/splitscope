@@ -40,8 +40,16 @@ export const abTastyAdapter: PageAdapter = {
       helpers.emit({ platform: 'ab-tasty', category: 'activation', name: 'executedCampaign', via: 'dom-event', experimentId: String(detail?.campaignId ?? ''), variationId: String(detail?.variationId ?? ''), properties: sanitize(detail) });
     });
     helpers.listen('abtasty_consentValid', () => helpers.emit({ platform: 'ab-tasty', category: 'consent', name: 'consentValid', via: 'dom-event' }));
-    helpers.wrapMethod(() => (window as any).ABTasty, 'ClickTracking', 'ab-tasty', (args) => String(args[0] || 'ABTastyClickTracking'), 'goal');
-    helpers.wrapMethod(() => (window as any).ABTasty, 'send', 'ab-tasty', (args) => String(args[0] || 'ABTasty.send'));
-    helpers.wrapQueue('_abtasty', 'ab-tasty', (args) => String((args[0] as any)?.[0] || '_abtasty.push'));
+    // Documented tracking calls: ABTastyClickTracking(name, null, campaignId), abtasty.send(hitType, params) and the deprecated _abtasty.push(data).
+    const campaign = (value: unknown) => value == null || value === '' ? undefined : { experimentId: String(value) };
+    helpers.wrapMethod(() => window as any, 'ABTastyClickTracking', 'ab-tasty', (args) => String(args[0] || 'Action tracking'), 'goal', undefined, (args) => campaign(args[2]));
+    helpers.wrapMethod(() => window as any, 'ABTastyEvent', 'ab-tasty', (args) => String(args[0] || 'Action tracking'), 'goal', undefined, (args) => campaign(args[2]));
+    const hitName = (args: unknown[]) => {
+      const type = String(args[0] ?? 'hit'); const params = (args[1] || {}) as any;
+      const label = params.ea ?? params.ec ?? params.tid ?? params.name;
+      return label != null ? `${type}: ${String(label)}` : type;
+    };
+    helpers.wrapMethod(() => (window as any).abtasty, 'send', 'ab-tasty', hitName, (args) => /transaction/i.test(String(args[0])) ? 'revenue' : /pageview|screenview/i.test(String(args[0])) ? 'pageview' : 'custom');
+    helpers.wrapQueue('_abtasty', 'ab-tasty', (args) => { const data = args[0] as any; return Array.isArray(data) ? `${String(data[0] ?? 'push')}: ${String(data[1] ?? '')}`.replace(/: $/, '') : '_abtasty.push'; }, (args) => { const data = args[0] as any; return Array.isArray(data) && data[0] === 'transaction' ? 'revenue' : 'custom'; });
   }
 };

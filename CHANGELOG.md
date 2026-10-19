@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.6.4
+
+- One action now shows as one event. When a site calls a platform API (for example optimizely.push({ type: 'event' })) and the platform's own listener reports the same action a moment later, the two are merged into the API call row, marked "confirmed by Optimizely", with the platform's report under the event details. Before, both appeared as separate rows.
+- Merging applies to every platform: same platform, within 2 seconds, matched by event name or goal ID (so Kameleoon processConversion plus Kameleoon::ConversionTriggered, and Convert triggerConversion plus goal.triggered, also become one row). Each call is confirmed at most once, so a real second event still shows. The listener can add the activity link the call lacked.
+- Event checks count the merged event once.
+- An activity's Events tab keeps the "Linked events" heading when nothing is linked yet.
+
+## 0.6.3
+
+Goal reading and event naming, only where the vendor documentation supports it.
+
+Kameleoon (Activation API reference and Activation API events)
+- Experiments now carry their goals from Experiment.goals and mainGoal (Goal objects with id, name, type), so conversions match their experiment on the activity Events tab.
+- Listens to the documented events, including Kameleoon::ConversionTriggered (named "Conversion: goal name", with the goal ID), Kameleoon::CustomDataSet and Kameleoon::SegmentTriggered. Experiment and personalization events read the variation from associatedVariation, as documented.
+- Command queue calls are named: ['Kameleoon.API.Goals.processConversion', id] reads "Conversion: id" and is a goal; other commands are lifecycle.
+
+VWO, now documented under the Wingify name (Lifecycle Events and Event Hooks)
+- Registers the documented onEventReceive hooks for variation applied (vA), variation error (vAE), goal conversion (rC) and test not running (tNR). Conversions carry the campaign ID and goal ID, so they link directly to their campaign.
+- Captures the documented custom event call Wingify.event(name, attributes) as a custom event. The same calls on the older VWO name are captured too.
+- Queue commands are lifecycle, not custom events. VWO does not document a way to read campaign goals, so none are read.
+
+AB Tasty (Global methods and variables)
+- Captures the documented ABTastyClickTracking(name, null, campaignId), linked to the campaign when the ID is given, and abtasty.send(hitType, params), typed as revenue for transactions. The previous wrappers targeted ABTasty.ClickTracking and ABTasty.send, which are not the documented names, so these calls were missed.
+- The deprecated _abtasty.push is still captured and typed. AB Tasty does not document campaign goal fields, so none are read.
+
+Convert (Experiment life cycle events, Record conversions)
+- Adds the documented lifecycle listeners experience.variation_decided, experience.activated and goal.triggered. Goal events carry the experience, variation and goal IDs and link to their experience.
+- _conv_q.push(['triggerConversion', goalId]) reads "Conversion: goalId" and is a goal. Convert does not document a goal list per experience, so none are read.
+
+General
+- Listener registrations Splitscope adds are marked and never logged as site activity.
+- Goal matching on the activity Events tab also uses goal IDs recorded on the event.
+
+## 0.6.2
+
+Counts
+- The All, Here, Other and Pinned counts now follow the search, platform and type filters, so each count matches the list it opens. Before, they always counted every activity on the page (All 92 while the A/B test filter showed 12).
+- The line under the counts says "12 of 92 activities" and names the active filters whenever something narrows the list.
+
+Events on an activity
+- An activity's Events tab used to show only events that carry that activity's ID. A custom event such as optimizely.push({ type: 'event', eventName }) has no activity ID, so it never appeared there, which looked like events were not being captured. They were always in the main Events tab.
+- The activity Events tab now also lists the platform's goal and custom events that match one of the activity's metrics (tagged "Matches a metric") or were sent while the activity was active on the page (tagged "Sent while active"), with a note that the platform credits those to every active activity that tracks them.
+- Optimizely goals now carry the event API name, so a pushed event matches its metric.
+- Kameleoon events now carry the experiment and variation from the event detail, so they link to their activity.
+
+Event names and types
+- optimizely.push calls are named and typed by what they do: custom events keep their event name (revenue when tags include revenue), page commands read "Page activated: name", attribute updates are identity, everything else is lifecycle. Before, every push was a custom event, so page and user commands looked like conversions.
+
+## 0.6.1
+
+Polish pass, based on rendering every panel screen in light and dark and reviewing it.
+
+Layout and design
+- Tools and Adobe Target tool menus are now wrapping chips instead of a scrolling strip, so Reset visitor, Optimizely, Kameleoon and the later Target tools (Timing, QA, Mboxes, On-device, Memory, Conflicts) are no longer hidden off screen.
+- Adobe Target Mboxes, Memory, Conflicts and Timing tabs: labels sit above full width fields, text uses the caption style, headings and button spacing match the rest of the panel.
+- "Waiting for delivery" only shows on tabs that depend on captured requests, and "No findings" only shows once something was captured.
+- Section headings (Appearance, Capture, Detection evidence and others) get proper spacing; they were collapsed against the previous row.
+- Status notes with a title now show the title on its own line ("The visitor qualifies" no longer runs into the sentence after it).
+- List rows in the Optimizely and Kameleoon tools keep name and value or action on one line, instead of stretching buttons to full width.
+- Variation bars use one color for your variation (amber, matching the split bar) and a neutral color for the others, in both themes. The split bar no longer uses fixed light colors in dark mode.
+- The "Type not exposed" tag is no longer shown on activity cards and the detail header; it carried no information.
+- The preview hint no longer appears twice while choosing a variation.
+- "1 signals" now reads "1 signal".
+
+Performance
+- Unchanged snapshots are no longer re-sent every scan (a heartbeat still goes out every 15 seconds), which matters on projects with hundreds of activities.
+- Scans back off automatically on pages where a scan is expensive. Rescan and connecting always send a fresh snapshot.
+
+## 0.6.0
+
+Optimizely tools (Tools tab, shown when Optimizely is detected)
+- Visitor: visitor ID, project ID and snippet revision, plus the visitor's attributes with their dashboard names. Attributes can be set through Optimizely's own API to test targeting.
+- Audiences: pick an experiment and see each audience's conditions evaluated against this visitor and page, as a pass, fail or unknown tree. Conditions Splitscope cannot read (location, device, custom JavaScript) stay Unknown instead of guessing.
+- Pages: current activation state, with Activate and Deactivate for pages that have an API name.
+- Events: project events that have an API name, with a confirmed Fire button to test a metric.
+- Debug: reload with log level info or debug, or with Optimizely disabled.
+- A note appears when the snippet was republished since you last inspected the project (the last seen revision is saved per project in the site workspace).
+
+Kameleoon tools (Tools tab, shown when Kameleoon is detected)
+- Visitor: visitor code, site code, visit count, current visit details and conversions.
+- Consent: A/B testing and personalization consent state, with confirmed Grant and Withdraw buttons.
+- Custom data: everything set for the visitor and page, with Set and Reset (confirmed) to test targeting.
+- Experiments: whether each experiment or personalization ran on this page, the reason Kameleoon reports when a visitor is not exposed, and Block on this page, Block this visit or Disable. The reason also appears on the activity itself.
+- Goals: send a test conversion (confirmed), with optional revenue.
+- Segments and triggers: list, with Re-evaluate for segments.
+- Kameleoon variation 0 is now marked as the original.
+
+Under the hood
+- The panel can now ask the page to run a platform action and wait for the answer (a request and response channel over the existing bridge). Adapters declare these as actions.
+
 ## 0.5.0
 
 Reset visitor (Tools tab)

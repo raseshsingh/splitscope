@@ -31,7 +31,29 @@ export const convertAdapter: PageAdapter = {
     });
   },
   install(helpers) {
-    helpers.wrapQueue('_conv_q', 'convert', (args) => String((args[0] as any)?.what || (args[0] as any)?.[0] || '_conv_q.push'));
+    // Documented lifecycle listeners: _conv_q.push({ what: 'addListener', params: { event, handler } }).
+    const listeners: Record<string, 'decision' | 'activation' | 'goal'> = { 'experience.variation_decided': 'decision', 'experience.activated': 'activation', 'goal.triggered': 'goal' };
+    let listening = false;
+    const register = () => {
+      const queue = (window as any)._conv_q;
+      if (listening || !queue || typeof queue.push !== 'function') return;
+      listening = true;
+      for (const [eventName, category] of Object.entries(listeners)) {
+        const handler = (event: any) => {
+          const data = event?.data ?? event ?? {};
+          const experience = data.experience_name ?? data.experience_id;
+          const name = eventName === 'goal.triggered' ? `Goal triggered: ${String(data.goal_id ?? '')}` : eventName === 'experience.activated' ? `Experience activated: ${String(experience ?? '')}` : `Variation decided: ${String(experience ?? '')}`;
+          helpers.emit({ platform: 'convert', category, name, via: 'listener', experimentId: data.experience_id == null ? undefined : String(data.experience_id), variationId: data.variation_id == null ? undefined : String(data.variation_id), properties: { event: eventName, goalId: data.goal_id == null ? undefined : String(data.goal_id), data: sanitize(data) } });
+        };
+        Object.defineProperty(handler, '__splitscope', { value: true });
+        try { queue.push({ what: 'addListener', params: { event: eventName, handler } }); } catch {}
+      }
+    };
+    register();
+    const timer = window.setInterval(register, 500);
+    helpers.addCleanup(() => window.clearInterval(timer));
+    // Documented conversion command: _conv_q.push(['triggerConversion', goalId]).
+    helpers.wrapQueue('_conv_q', 'convert', (args) => { const item = args[0] as any; if (Array.isArray(item)) return item[0] === 'triggerConversion' ? `Conversion: ${String(item[1] ?? '')}` : `_conv_q: ${String(typeof item[0] === 'function' ? 'function' : item[0] ?? 'command')}`; return item?.what ? `_conv_q: ${String(item.what)}` : '_conv_q.push'; }, (args) => { const item = args[0] as any; return Array.isArray(item) && item[0] === 'triggerConversion' ? 'goal' : 'lifecycle'; });
     helpers.wrapQueue('convert', 'convert', (args) => String((args[0] as any)?.what || 'convert.push'));
     helpers.wrapMethod(() => (window as any).convert, 'triggerConversion', 'convert', () => 'triggerConversion', 'goal');
     helpers.wrapMethod(() => (window as any).convert, 'triggerConversions', 'convert', () => 'triggerConversions', 'goal');
