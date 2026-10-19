@@ -436,3 +436,7 @@ Kameleoon: actions live in `adapters/kameleoon.ts` (visitor, experiments, setCus
 ## Changes in 0.6.1 (polish)
 
 Navigation with many items uses `.ss-chips` (wrapping pill buttons): the Tools menu in `App.tsx` and the Adobe Target tool menu in `TargetView.tsx`. Platform sub tabs keep the underline `.ss-tabs`. The hook (`install.ts`) now skips posting a snapshot whose content (ignoring `capturedAt`) matches the previous one, except for a 15 second heartbeat, and spaces scans by the measured scan cost (`scanCost`). `forcePublish` bypasses the dedupe for Rescan and for the first snapshot after connecting.
+
+## Changes in 0.7.0 (Phase 1 of the review)
+
+`HookHelpers.onGlobal(name, apply)` calls `apply` with a global's value now and whenever the site assigns it; `trapGlobal` now supports several watchers per name. Optimizely, VWO and Convert register their listeners through it. `core/page-key.ts` defines a page as origin plus path (`pageKey`, `samePage`); the hook, the Target adapter, capture and timing use it. On a route change the hook keeps the previous page's observed activities as demoted entries (`previousObserved`). `HookHelpers.analyticsEnabled()` gates Adobe Analytics capture; the background caches the setting for its beacon listener. `installNetworkHooks` skips URLs the Target inspector owns. Status logic changed in the AB Tasty, Optimizely, VWO, Kameleoon, Dynamic Yield, Monetate, PageSense and Statsig adapters (see CHANGELOG).

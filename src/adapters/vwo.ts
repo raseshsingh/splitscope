@@ -46,7 +46,10 @@ export const vwoAdapter: PageAdapter = {
       const selectedVariation = variants.find((item) => item.id === String(selected));
       const controlId = value.control_variation_id == null ? undefined : String(value.control_variation_id);
       const traffic = Number(value.pc_traffic);
-      const weights = variants.map((variation) => Number((combs as any)[variation.id]?.weight ?? (combs as any)[variation.id]));
+      const rawWeights = variants.map((variation) => Number((combs as any)[variation.id]?.weight ?? (combs as any)[variation.id]));
+      // VWO stores combination weights as fractions (0.5); the panel shows percentages.
+      const fractional = rawWeights.length > 0 && rawWeights.every(weight => Number.isFinite(weight) && weight >= 0 && weight <= 1);
+      const weights = fractional ? rawWeights.map(weight => Math.round(weight * 10000) / 100) : rawWeights;
       return normalizedExperiment({
         platform: 'vwo', id, name: value.name || `Experiment ${id}`, kind: activityKind('vwo', value),
         status: selectedVariation ? value.combination_chosen != null ? 'running-in' : 'bucketed-elsewhere' : 'unknown',
@@ -61,16 +64,13 @@ export const vwoAdapter: PageAdapter = {
     // Lifecycle hooks follow the documented onEventReceive API: push(['onEventReceive', code, callback]),
     // where the callback receives [eventName, campaignId, third], third being the variation for vA/vAE and the goal for rC.
     const lifecycle: Record<string, { name: string; category: 'activation' | 'goal' | 'error' | 'decision' }> = { vA: { name: 'Variation applied', category: 'activation' }, vAE: { name: 'Variation could not be applied', category: 'error' }, rC: { name: 'Goal conversion', category: 'goal' }, tNR: { name: 'Test not running', category: 'decision' } };
-    const registered = new Set<string>();
-    const targets = new WeakSet<object>();
-    const register = () => {
-      for (const space of ['Wingify', 'VWO']) {
-        const target = (window as any)[space];
-        if (registered.has(space) || !target || typeof target.push !== 'function') continue;
-        registered.add(space);
-        // Both names can point at the same object; register once per object.
-        if (targets.has(target)) continue;
-        targets.add(target);
+    // Register once, on whichever documented namespace (Wingify, or VWO on older SmartCode) appears first.
+    // Pushing into the pre-load queue array is the documented way to listen before SmartCode runs.
+    let registered = false;
+    const register = (target: any) => {
+      {
+        if (registered || !target || typeof target.push !== 'function') return;
+        registered = true;
         for (const [code, info] of Object.entries(lifecycle)) {
           const callback = (data: unknown) => {
             const values = Array.isArray(data) ? data : [];
@@ -83,8 +83,12 @@ export const vwoAdapter: PageAdapter = {
         }
       }
     };
-    register();
-    const timer = window.setInterval(register, 500);
+    helpers.onGlobal('Wingify', register);
+    helpers.onGlobal('VWO', register);
+    // The trap above attaches the moment the site assigns the global; this poll only covers sites
+    // where the global cannot be trapped, and stops once registered or after 30 seconds.
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => { register((window as any).Wingify ?? (window as any).VWO); if (registered || performance.now() - startedAt > 30000) window.clearInterval(timer); }, 500);
     helpers.addCleanup(() => window.clearInterval(timer));
     const queueName = (space: string) => (args: unknown[]) => { const item = args[0] as any; return Array.isArray(item) ? `${space}.push: ${String(item[0] ?? 'command')}` : typeof item === 'function' ? `${space}.push: function` : `${space}.push`; };
     helpers.wrapQueue('Wingify', 'vwo', queueName('Wingify'), 'lifecycle');

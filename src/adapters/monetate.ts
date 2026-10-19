@@ -14,7 +14,7 @@ export const monetateAdapter: PageAdapter = {
   listExperiments() {
     const campaigns = (window as any).monetate?.campaigns;
     if (!Array.isArray(campaigns)) return [];
-    return mapSafely(campaigns, (raw: any) => normalizedExperiment({ platform: 'monetate', id: String(raw.id ?? ''), name: raw.key || raw.name || `Experience ${raw.id}`, kind: activityKind('monetate', raw), status: 'running-in', variations: raw.split ? [{ id: String(raw.split), name: String(raw.split) }] : [], assignedVariationId: raw.split ? String(raw.split) : undefined, source: ['runtime-api'], raw: raw }));
+    return mapSafely(campaigns, (raw: any) => normalizedExperiment({ platform: 'monetate', id: String(raw.id ?? ''), name: raw.key || raw.name || `Experience ${raw.id}`, kind: activityKind('monetate', raw), status: raw.split ? 'bucketed-elsewhere' : 'unknown', statusReason: 'Listed in Monetate page data. Monetate does not expose whether it applied on this page.', variations: raw.split ? [{ id: String(raw.split), name: String(raw.split) }] : [], assignedVariationId: raw.split ? String(raw.split) : undefined, source: ['runtime-api'], raw: raw }));
   },
   install(helpers) {
     helpers.wrapQueue('monetateQ', 'monetate', (args) => String((args[0] as any)?.[0] || 'monetateQ.push'), 'data-feed');

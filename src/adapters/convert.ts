@@ -34,8 +34,7 @@ export const convertAdapter: PageAdapter = {
     // Documented lifecycle listeners: _conv_q.push({ what: 'addListener', params: { event, handler } }).
     const listeners: Record<string, 'decision' | 'activation' | 'goal'> = { 'experience.variation_decided': 'decision', 'experience.activated': 'activation', 'goal.triggered': 'goal' };
     let listening = false;
-    const register = () => {
-      const queue = (window as any)._conv_q;
+    const register = (queue: any) => {
       if (listening || !queue || typeof queue.push !== 'function') return;
       listening = true;
       for (const [eventName, category] of Object.entries(listeners)) {
@@ -49,8 +48,11 @@ export const convertAdapter: PageAdapter = {
         try { queue.push({ what: 'addListener', params: { event: eventName, handler } }); } catch {}
       }
     };
-    register();
-    const timer = window.setInterval(register, 500);
+    helpers.onGlobal('_conv_q', register);
+    // The trap above attaches the moment the site assigns the global; this poll only covers sites
+    // where the global cannot be trapped, and stops once registered or after 30 seconds.
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => { register((window as any)._conv_q); if (listening || performance.now() - startedAt > 30000) window.clearInterval(timer); }, 500);
     helpers.addCleanup(() => window.clearInterval(timer));
     // Documented conversion command: _conv_q.push(['triggerConversion', goalId]).
     helpers.wrapQueue('_conv_q', 'convert', (args) => { const item = args[0] as any; if (Array.isArray(item)) return item[0] === 'triggerConversion' ? `Conversion: ${String(item[1] ?? '')}` : `_conv_q: ${String(typeof item[0] === 'function' ? 'function' : item[0] ?? 'command')}`; return item?.what ? `_conv_q: ${String(item.what)}` : '_conv_q.push'; }, (args) => { const item = args[0] as any; return Array.isArray(item) && item[0] === 'triggerConversion' ? 'goal' : 'lifecycle'; });

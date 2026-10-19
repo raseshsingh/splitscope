@@ -74,10 +74,15 @@ export const kameleoonAdapter: PageAdapter = {
       ...readCollection('Experiments').map((value) => ({ value, kind: 'ab' as const })),
       ...readCollection('Personalizations').map((value) => ({ value, kind: 'personalization' as const }))
     ];
+    // Read once per scan, not once per activity.
+    const activeIds = (kind: 'Experiments' | 'Personalizations'): Set<string> | null => {
+      try { const api = (window as any).Kameleoon?.API?.[kind]; return typeof api?.getActive === 'function' ? new Set(asArray(api.getActive()).map((item: any) => String(item?.id ?? item?.experimentId))) : null; } catch { return null; }
+    };
+    const active = { ab: activeIds('Experiments'), personalization: activeIds('Personalizations') };
+    // The public API returns names/IDs only. Read optional loaded definitions without executing them.
+    const definitions = asArray((window as any).Kameleoon?.Internals?.runtime?.variations);
     return mapSafely(entries.filter(({ value }) => value && typeof value === 'object'), ({ value, kind }) => {
       const variations = variationList(value.variations, { weights: value.trafficDeviation || value.deviations || value.trafficAllocation });
-      // The public API returns names/IDs only. Read optional loaded definitions without executing them.
-      const definitions = asArray((window as any).Kameleoon?.Internals?.runtime?.variations);
       for (const variation of variations) {
         const definition = definitions.find((item: any) => String(item.id) === variation.id && (item.actionId != null ? String(item.actionId) === String(value.id ?? value.experimentId) : variation.id !== '0'));
         if (definition) {
@@ -86,13 +91,20 @@ export const kameleoonAdapter: PageAdapter = {
         }
       }
       const assignedId = value.associatedVariation?.id ?? value.associatedVariationId;
-      const api = (window as any).Kameleoon?.API?.[kind === 'personalization' ? 'Personalizations' : 'Experiments'];
-      let active = value.isActive === true || value.active === true;
-      try { if (typeof api?.getActive === 'function') active = asArray(api.getActive()).some((item: any) => String(item.id ?? item.experimentId) === String(value.id ?? value.experimentId)); } catch {};
+      const activeSet = active[kind];
+      const isActive = activeSet ? activeSet.has(String(value.id ?? value.experimentId)) : value.isActive === true || value.active === true;
+      const reason = value.nonExpositionReason == null || value.nonExpositionReason === '' ? '' : String(value.nonExpositionReason);
+      // Documented Experiment fields: triggered, activatedInVisit, nonExpositionReason.
+      const status = isActive ? 'running-in'
+        : reason && /hold.?back|exclu|realloc|traffic|deviation|sample/i.test(reason) ? 'running-excluded'
+        : reason ? 'not-targeted'
+        : value.activatedInVisit === true || assignedId != null ? 'bucketed-elsewhere'
+        : value.triggered === false ? 'not-on-page'
+        : 'unknown';
       return normalizedExperiment({
         platform: 'kameleoon', id: String(value.id ?? value.experimentId ?? value.key ?? ''), name: value.name || `Experiment ${value.id}`,
-        kind, status: active ? 'running-in' : assignedId != null ? 'bucketed-elsewhere' : 'unknown',
-        statusReason: !active && value.nonExpositionReason != null && value.nonExpositionReason !== '' ? `Kameleoon reports why this visitor is not exposed: ${String(value.nonExpositionReason)}.` : undefined,
+        kind, status,
+        statusReason: !isActive && reason ? `Kameleoon reports why this visitor is not exposed: ${reason}.` : status === 'not-on-page' ? 'Kameleoon has not triggered this activity on this page.' : status === 'bucketed-elsewhere' && value.activatedInVisit === true ? 'Activated earlier in this visit, not on this page.' : undefined,
         variations: variations.map(variation => ({ ...variation, isControl: variation.isControl || variation.id === '0' })), assignedVariationId: assignedId != null ? String(assignedId) : undefined,
         trafficAllocation: typeof value.trafficAllocation === 'number' ? value.trafficAllocation : undefined, targeting: { urls: asArray(value.targeting?.urls).map(String) },
         goals: activityGoals(value), source: variations.some(v => v.changes?.length) ? ['runtime-api', 'snippet-data'] : ['runtime-api'], raw: value

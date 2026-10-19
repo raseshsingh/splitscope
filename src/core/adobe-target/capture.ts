@@ -3,6 +3,7 @@ import { installTargetTiming } from './timing';
 import { enrichIntegrity } from './integrity';
 import type { HookHelpers } from '../hooks/runtime';
 import { sanitize } from '../sanitize';
+import { samePage } from '../page-key';
 import { classifyTarget, normalizeWire, targetPropositions, type TargetWire } from './wire';
 const MAX = 1_000_000;
 /** Clone response streams with a hard bound. Never consume the site's response. */
@@ -21,11 +22,13 @@ export function installTargetCapture(helpers: HookHelpers, decision: (data: unkn
     if (!alive) return;
     try {
       const wire = normalizeWire({...input,pageId}); if (!wire) return;
+      // Adobe Analytics hits carry eVars and visitor IDs; record them only when the user opted in.
+      if (wire.pipe === 'analytics' && !helpers.analyticsEnabled()) return;
       wire.privacy=privacySignals(wire.request,wire.response);
       const globalMbox=(window as any).adobe?.target?.settings?.globalMboxName||(window as any).targetGlobalSettings?.globalMboxName;
       for(const box of wire.locations)if(box.name==='pageLoad')box.name=typeof globalMbox==='string'?globalMbox:'target-global-mbox';
-      if(wire.page===location.href)observeTiming(wire);
-      if (wire.target && wire.pipe !== 'ode' && wire.page === location.href) decision(wire.pipe === 'edge' ? targetPropositions(wire.response).map(p=>({...p, activityId:p.scopeDetails.activity?.id, experienceId:p.scopeDetails.experience?.id})) : wire.response);
+      if(samePage(wire.page))observeTiming(wire);
+      if (wire.target && wire.pipe !== 'ode' && samePage(wire.page)) decision(wire.pipe === 'edge' ? targetPropositions(wire.response).map(p=>({...p, activityId:p.scopeDetails.activity?.id, experienceId:p.scopeDetails.experience?.id})) : wire.response);
       const integrity=await enrichIntegrity(wire);
       if (!alive) return;
       helpers.emit({platform:wire.target?'adobe-target':wire.pipe==='analytics'?'adobe-analytics':'page', category:'network',name:`Target inspector · ${wire.pipe} · ${wire.status || 'network failure'}`, via:'network', properties:sanitize({...Object.fromEntries(Object.entries(wire).filter(([key])=>key!=='request'&&key!=='response')),integrity,request:wire.request,response:wire.response},400_000,18)});

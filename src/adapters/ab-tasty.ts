@@ -3,6 +3,16 @@ import type { PageAdapter } from '../core/hooks/runtime';
 import { asArray, detection, mapSafely, normalizedExperiment, variationList, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
 
+/** Campaign types from the documented results object: ab, multipage, multivariate, mastersegment, subsegment. */
+function abTastyKind(type: unknown, additional: unknown, raw: any) {
+  const value = String(type ?? '').toLowerCase();
+  if (String(additional ?? '').toLowerCase() === 'redirection') return 'split-url' as const;
+  if (value === 'multivariate') return 'mvt' as const;
+  if (value === 'mastersegment' || value === 'subsegment') return 'personalization' as const;
+  if (value === 'ab' || value === 'multipage') return 'ab' as const;
+  return activityKind('ab-tasty', raw);
+}
+
 export const abTastyAdapter: PageAdapter = {
   id: 'ab-tasty', displayName: 'AB Tasty', category: 'experimentation',
   detect() {
@@ -17,17 +27,26 @@ export const abTastyAdapter: PageAdapter = {
     const tests = ab.accountData?.tests || ab.tests || {};
     const results = ab.results || {};
     const history = (() => { try { return ab.getCampaignHistory?.() || {}; } catch { return {}; } })();
-    const onPage = new Set(asArray(ab.getTestsOnPage?.()).map((item: any) => String(item.id ?? item)));
-    const ids = new Set([...Object.keys(tests), ...Object.keys(results), ...Object.keys(history)]);
+    // getTestsOnPage() and results are documented as objects keyed by campaign ID.
+    const onPageRaw = (() => { try { return ab.getTestsOnPage?.(); } catch { return undefined; } })();
+    const onPageMap: Record<string, any> = onPageRaw && typeof onPageRaw === 'object' && !Array.isArray(onPageRaw) ? onPageRaw : Object.fromEntries(asArray(onPageRaw).map((item: any) => [String(item?.id ?? item), item]));
+    const onPage = new Set(Object.keys(onPageMap));
+    const ids = new Set([...Object.keys(tests), ...Object.keys(results), ...Object.keys(history), ...onPage]);
     return mapSafely(Array.from(ids), (id) => {
       const raw: any = (tests as any)[id] || (results as any)[id] || {};
-      const assigned = (history as any)[id];
+      const result: any = (results as any)[id];
+      const live: any = onPageMap[id];
+      const resultStatus = String(live?.status ?? result?.status ?? '');
+      const accepted = onPage.has(id) || /^accepted/.test(resultStatus);
+      const stored = (history as any)[id];
+      const current = live?.variationID ?? (accepted ? result?.variationID : undefined);
+      const assigned = current ?? stored;
       const variations = variationList(raw.variations || raw.variationsList, { weights: raw.traffic, names: raw.variationNames });
       return normalizedExperiment({
-        platform: 'ab-tasty', id, name: raw.name || raw.label || `Campaign ${id}`,
-        kind: activityKind('ab-tasty', raw),
-        status: onPage.has(id) ? 'running-in' : assigned != null ? 'bucketed-elsewhere' : 'unknown',
-        statusReason: raw.reason || raw.rejectionReason || raw.statusReason,
+        platform: 'ab-tasty', id, name: raw.name || raw.label || live?.name || result?.name || `Campaign ${id}`,
+        kind: abTastyKind(result?.type ?? live?.type ?? raw.type, result?.additionalType, raw),
+        status: accepted ? 'running-in' : stored != null ? 'bucketed-elsewhere' : resultStatus ? 'not-on-page' : 'unknown',
+        statusReason: !accepted && resultStatus ? `AB Tasty reports this campaign as "${resultStatus.replace(/_/g, ' ')}" for this visitor on this page.` : raw.reason || raw.rejectionReason || raw.statusReason,
         variations, assignedVariationId: assigned == null ? undefined : String(assigned),
         trafficAllocation: raw.trafficAllocation ?? raw.traffic,
         changes: variationChanges(raw), source: ['runtime-api'], raw: { test: sanitize(raw), result: sanitize((results as any)[id]), assignment: assigned }

@@ -22,10 +22,14 @@ export interface PageAdapter {
 
 export interface HookHelpers {
   emit: RuntimeEmitter;
+  /** Call `apply` with the global's value now (when set) and every time the site assigns it, so listeners attach before vendor events fire. */
+  onGlobal(name: string, apply: (value: AnyRecord) => void): void;
   wrapQueue(name: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: EventCategory): void;
   wrapMethod(target: AnyRecord | undefined | (() => AnyRecord | undefined), method: string, platform: PlatformId, eventName?: (args: unknown[]) => string, category?: EventCategory, observe?: (args: unknown[], result: unknown) => void, link?: (args: unknown[]) => { experimentId?: string; variationId?: string } | undefined): void;
   listen(name: string, handler: (event: Event) => void): void;
   clean(value: unknown): unknown;
+  /** Whether the user turned on "Capture analytics calls". Analytics hits are not recorded otherwise. */
+  analyticsEnabled(): boolean;
   addExperiment(experiment: NormalizedExperiment): void;
   invalidate(platform: PlatformId): void;
   addCleanup(fn: () => void): void;

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.0
+
+Phase 1 of the extension review: trust what the panel shows.
+
+Capture timing and pages
+- Optimizely, VWO and Convert listeners now attach the moment the site creates the vendor global or its documented pre-load queue, instead of on a 500 ms poll. The page load decisions (Optimizely initialized, activated and campaignDecided; VWO variation applied; Convert variation decided) are no longer missed. Each registers once; a short fallback poll covers sites where the global cannot be watched and stops after 30 seconds.
+- A page is now its origin and path. Anchor links and query changes (for example UTM cleanup through replaceState) no longer clear Adobe Target, GrowthBook, Statsig and PostHog activities. On a real route change, activities from the previous page stay listed as "Observed on the previous page" until the new page reports them.
+
+Analytics and network
+- Adobe Analytics hits (eVars, props, visitor IDs) are recorded only when Capture analytics calls is on, in both the page and the background. The A4T view says so.
+- Adobe Target and Analytics requests are logged once, by the Target inspector, instead of twice.
+
+Platform statuses
+- AB Tasty: Active here, the current variation and rejection reasons come from the documented getTestsOnPage() and results objects. Campaign types map to A/B, multivariate, personalization and split URL.
+- Optimizely: global holdback is read through the State API method, so held back visitors show Holdback / excluded.
+- VWO: VISUAL_AB tests are A/B tests and VISUAL tests multivariate; fractional weights show as percentages (50%, not 0.5%).
+- Kameleoon: uses the documented triggered, activatedInVisit and nonExpositionReason fields for Not targeted, Holdback / excluded, Not on this page and Activated earlier in this visit; getActive is read once per scan.
+- Dynamic Yield: only rendered objects count as Active here; the site wide allocation list is shown as stored; entries without an ID are skipped.
+- Monetate and PageSense no longer mark every listed campaign as Active here.
+- Statsig: experiments with no group for the user show Not targeted.
+
+Event types and duplicates
+- at.js calls are typed by purpose (getOffers decision, applyOffers activation, triggerView pageview, trackEvent goal). DY.API, PageSense and PostHog system events get proper types instead of custom, so they no longer crowd "Sent while active".
+- GrowthBook and Statsig evaluations show as one row each instead of two or three.
+- Only names like identify, login, logout, setUser or user ID count as identity events.
+
 ## 0.6.4
 
 - One action now shows as one event. When a site calls a platform API (for example optimizely.push({ type: 'event' })) and the platform's own listener reports the same action a moment later, the two are merged into the API call row, marked "confirmed by Optimizely", with the platform's report under the event details. Before, both appeared as separate rows.

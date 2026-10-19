@@ -192,6 +192,8 @@ export const optimizelyAdapter: PageAdapter = {
 
     let state: AnyRecord;
     try { state = (typeof opt.get === 'function' ? opt.get('state') : data.state) || {}; } catch { state = {}; }
+    // isGlobalHoldback is a State API method; older data exposed a boolean.
+    const globalHoldback = typeof state.isGlobalHoldback === 'function' ? readState<boolean>(state, 'isGlobalHoldback', false) === true : state.isGlobalHoldback === true;
     const index = indexExperiments(data);
     const experimentStates = readState<AnyRecord>(state, 'getExperimentStates', {});
     const campaignStates = readState<AnyRecord>(state, 'getCampaignStates', {});
@@ -223,7 +225,7 @@ export const optimizelyAdapter: PageAdapter = {
       }), { weights, changes: item => item.changes });
       const selected = variations.find((variation) => variation.id === String(assignment?.id));
       const isActiveHere = activeResult !== null ? activeIds.has(id) : experimentState.isActive === true || campaignState?.isActive === true;
-      const inHoldback = state.isGlobalHoldback === true || experimentState.isInExperimentHoldback === true || campaignState?.isInCampaignHoldback === true;
+      const inHoldback = globalHoldback || experimentState.isInExperimentHoldback === true || campaignState?.isInCampaignHoldback === true;
       const kind = activityKind(raw, campaign);
       const status = inHoldback && isActiveHere ? 'running-excluded' : isActiveHere ? 'running-in' : assignment ? 'bucketed-elsewhere' : activeResult !== null ? 'not-on-page' : 'unknown';
       const statusReason = activeResult === null && !isActiveHere ? 'The runtime did not expose a current active list. Activity on this page is unknown.' : inHoldback
@@ -264,7 +266,7 @@ export const optimizelyAdapter: PageAdapter = {
         },
         goals: asArray(raw.metrics).map((goal: any) => { const event = data.events?.[goal?.event_id ?? goal?.eventId ?? goal?.id]; return { id: String(event?.apiName ?? goal?.id ?? goal?.event_id ?? ''), name: String(goal?.name || event?.name || event?.apiName || goal?.eventName || goal?.field || 'Goal') }; }),
         source: ['snippet-data', 'runtime-api'],
-        raw: sanitize({ experiment: raw, campaign, state: experimentState, campaignState, assignment, assignmentValue, selectedVariation: selected, pageIds, sections: raw.sections || raw.section_ids?.map((sectionId: string) => data.sections?.[sectionId]), runtime: typeof opt.get === 'function' ? 'web' : 'classic', globalHoldback: state.isGlobalHoldback, revision: data.revision })
+        raw: sanitize({ experiment: raw, campaign, state: experimentState, campaignState, assignment, assignmentValue, selectedVariation: selected, pageIds, sections: raw.sections || raw.section_ids?.map((sectionId: string) => data.sections?.[sectionId]), runtime: typeof opt.get === 'function' ? 'web' : 'classic', globalHoldback, revision: data.revision })
       });
     });
   },
@@ -299,12 +301,13 @@ export const optimizelyAdapter: PageAdapter = {
     }
   },
   install(helpers) {
-    const registered = new WeakSet<object>();
+    // The documented pre-snippet queue (window.optimizely = window.optimizely || []) accepts addListener,
+    // so listeners attach before the snippet fires initialized, activated and campaignDecided.
+    let registered = false;
     const disposers: Array<() => void> = [];
-    const register = () => {
-      const opt = (window as any).optimizely;
-      if (!opt || typeof opt.push !== 'function' || typeof opt.get !== 'function' || registered.has(opt)) return;
-      registered.add(opt);
+    const register = (opt: any) => {
+      if (registered || !opt || typeof opt.push !== 'function') return;
+      registered = true;
       for (const [type, name] of [['lifecycle', 'initialized'], ['lifecycle', 'activated'], ['lifecycle', 'campaignDecided'], ['lifecycle', 'pageActivated'], ['lifecycle', 'pageDeactivated'], ['lifecycle', 'applied'], ['analytics', 'trackEvent']]) {
         const token = `splitscope:${type}:${name}:${Math.random().toString(36).slice(2)}`;
         const handler = (event: any) => {
@@ -312,12 +315,16 @@ export const optimizelyAdapter: PageAdapter = {
           const decision = event?.data?.decision;
           helpers.emit({ platform: 'optimizely', category: type === 'analytics' ? 'custom' : name === 'campaignDecided' ? 'decision' : 'lifecycle', name: type === 'analytics' ? String(event?.data?.name || name) : String(name), via: 'listener', experimentId: decision?.experimentId == null ? undefined : String(decision.experimentId), variationId: decision?.variationId == null ? undefined : String(decision.variationId), properties: sanitize(event) });
         };
-        try { opt.push({ type: 'addListener', filter: { type, name }, token, handler }); disposers.push(() => { try { opt.push({ type: 'removeListener', token }); } catch {} }); } catch {}
+        try { opt.push({ type: 'addListener', filter: { type, name }, token, handler }); disposers.push(() => { try { (window as any).optimizely?.push?.({ type: 'removeListener', token }); } catch {} }); } catch {}
       }
     };
-    register();
-    const timer = window.setInterval(register, 500);
-    helpers.addCleanup(() => { window.clearInterval(timer); for (const dispose of disposers) dispose(); });
+    helpers.onGlobal('optimizely', register);
+    helpers.addCleanup(() => { for (const dispose of disposers) dispose(); });
+    // The trap above attaches the moment the site assigns the global; this poll only covers sites
+    // where the global cannot be trapped, and stops once registered or after 30 seconds.
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => { register((window as any).optimizely); if (registered || performance.now() - startedAt > 30000) window.clearInterval(timer); }, 500);
+    helpers.addCleanup(() => window.clearInterval(timer));
     helpers.wrapQueue('optimizely', 'optimizely', pushName, pushCategory);
     helpers.wrapMethod(() => (window as any).optimizely, 'push', 'optimizely', pushName, pushCategory);
   },

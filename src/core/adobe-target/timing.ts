@@ -1,5 +1,6 @@
 import type {HookHelpers} from '../hooks/runtime';
 import {sanitize} from '../sanitize';
+import {samePage} from '../page-key';
 import {walk,type TargetWire} from './wire';
 export function timingMetrics(start:number,response:number,mutation:number,prehideEnd?:number) {
  return {requestToMutationMs:Math.max(0,mutation-start),responseToMutationMs:Math.max(0,mutation-response),possibleFlickerMs:prehideEnd===undefined?undefined:Math.max(0,mutation-prehideEnd)};
@@ -18,7 +19,7 @@ export function installTargetTiming(helpers:HookHelpers) {
  const observer=new MutationObserver(mutations=>{
  checkPrehide();let checked=0;
  for(const [selector,watch] of pending){
- if(watch.page!==location.href||Date.now()-watch.response>30000){pending.delete(selector);continue;}
+ if(!samePage(watch.page)||Date.now()-watch.response>30000){pending.delete(selector);continue;}
  try{
  const nodes=[...document.querySelectorAll(selector)].slice(0,50);
  const touched=mutations.slice(0,100).some(m=>nodes.some(node=>{if(++checked>5000)return false;return node===m.target||node.contains(m.target)||Array.from(m.addedNodes).some(added=>added===node||added.contains(node));}));

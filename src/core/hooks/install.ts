@@ -1,4 +1,6 @@
 import { serializeSnapshot } from '../bridge/snapshot';
+import { pageKey } from '../page-key';
+import { classifyTarget } from '../adobe-target/wire';
 import { EXTENSION_BUILD } from '../extension/messages';
 import { analyticsEndpoint, installAnalytics } from './analytics';
 import { queueKameleoonPreview } from './kameleoon-preview';
@@ -27,7 +29,15 @@ export function installHookEngine(adapters: PageAdapter[]): void {
   const refreshHooks: Array<() => void> = [];
   const experiments = new Map<string, NormalizedExperiment>();
   const observed = new Map<string, NormalizedExperiment>();
-  let observedUrl = location.href;
+  let observedPage = pageKey();
+  // Activities observed on the previous page are kept, demoted, until something on the new page replaces them.
+  let previousObserved = new Map<string, NormalizedExperiment>();
+  const routeChanged = () => {
+    if (pageKey() === observedPage) return;
+    const from = observedPage;
+    previousObserved = new Map([...observed].map(([key, item]) => [key, { ...item, status: 'unknown' as const, statusReason: `Observed on the previous page (${(() => { try { return new URL(from).pathname; } catch { return from; } })()}). Not seen on this page yet.`, evidence: item.evidence ? { ...item.evidence, state: 'detected' as const } : undefined }]));
+    observed.clear(); evidenceTimes.clear(); observedPage = pageKey();
+  };
   const evidenceTimes = new Map<string, { signature: string; at: number }>();
   let analyticsEnabled = false;
   let refreshAnalytics = () => {};
@@ -85,6 +95,9 @@ export function installHookEngine(adapters: PageAdapter[]): void {
 
   const helpers: HookHelpers = {
     emit,
+    onGlobal(name, apply) {
+      trapGlobal(name, (value) => { if (value !== undefined && value !== null) apply(value); });
+    },
     wrapQueue(name, platform, eventName, category) {
       trapGlobal(name, (value) => helpers.wrapMethod(value as AnyRecord, 'push', platform, eventName, category));
       refreshHooks.push(() => helpers.wrapMethod(win[name], 'push', platform, eventName, category));
@@ -104,10 +117,10 @@ export function installHookEngine(adapters: PageAdapter[]): void {
           const linked = link?.(args);
           if (!(platform === 'optimizely' && ['addListener', 'removeListener'].includes(command?.type) && String(command?.token).startsWith('splitscope:')) && !ownCommand(command)) emit({ ...linked, platform, category: (typeof category === 'function' ? category(args) : category) || inferCategory(String(eventName?.(args) || method)), name: String(eventName?.(args) || method), properties: args, via: 'api-call' });
         } catch {}
-        const callUrl = location.href;
+        const callPage = pageKey();
         const result = Reflect.apply(original, this, args);
         if (observe) {
-          const inspect = (value: unknown) => { try { if (location.href === callUrl) observe(args, value); } catch {} };
+          const inspect = (value: unknown) => { try { if (pageKey() === callPage) observe(args, value); } catch {} };
           if (result && typeof (result as any).then === 'function') void Promise.resolve(result).then(inspect, () => {});
           else inspect(result);
         }
@@ -127,16 +140,25 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       cleanups.push(() => window.removeEventListener(name, listener, true));
     },
     clean: sanitize,
+    analyticsEnabled: () => analyticsEnabled,
     addExperiment(experiment) {
       if (!experiment.id) return;
-      if (observedUrl !== location.href) { observed.clear(); evidenceTimes.clear(); observedUrl = location.href; }
+      routeChanged();
+      previousObserved.delete(`${experiment.platform}:${experiment.id}`);
       observed.set(`${experiment.platform}:${experiment.id}`, { ...experiment, evidence: experiment.evidence || { state: experiment.status === 'running-in' ? 'assigned' : experiment.status === 'bucketed-elsewhere' ? 'stored' : 'detected', observedAt: Date.now(), pageUrl: location.href } });
     },
-    invalidate(platform) { for (const [key, item] of observed) if (item.platform === platform) observed.delete(key); },
+    invalidate(platform) { for (const [key, item] of observed) if (item.platform === platform) observed.delete(key); for (const [key, item] of previousObserved) if (item.platform === platform) previousObserved.delete(key); },
     addCleanup(fn) { cleanups.push(fn); }
   };
 
+  // Several watchers can follow one global (a queue wrapper and a listener registration, for example).
+  const globalWatchers = new Map<string, Array<(value: unknown) => void>>();
   function trapGlobal(name: string, apply: (value: unknown) => void): void {
+    const existing = globalWatchers.get(name);
+    if (existing) { existing.push(apply); if (win[name] !== undefined) { try { apply(win[name]); } catch {} } return; }
+    const watchers = [apply];
+    globalWatchers.set(name, watchers);
+    const notify = (value: unknown) => { for (const watcher of watchers.slice()) { try { watcher(value); } catch {} } };
     const descriptor = Object.getOwnPropertyDescriptor(window, name);
     if (descriptor && !descriptor.configurable) {
       try { apply(win[name]); } catch {}
@@ -153,7 +175,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         configurable: true,
         enumerable: descriptor?.enumerable ?? true,
         get() { return current; },
-        set(value) { current = value; try { apply(value); } catch {} }
+        set(value) { current = value; notify(value); }
       });
       cleanups.push(() => {
         const active = Object.getOwnPropertyDescriptor(window, name);
@@ -168,7 +190,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
     const platforms: DetectionRecord[] = [];
     for (const refresh of refreshHooks) { try { refresh(); } catch {} }
     experiments.clear();
-    if (observedUrl !== location.href) { observed.clear(); evidenceTimes.clear(); observedUrl = location.href; }
+    routeChanged();
     for (const [key, value] of observed) experiments.set(key, value);
     for (const adapter of adapters) {
       try {
@@ -184,6 +206,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
         post('status', { platform: adapter.id, message: `Could not read ${adapter.displayName} runtime data.`, error: String(error) });
       }
     }
+    for (const [key, value] of previousObserved) if (!experiments.has(key)) experiments.set(key, value);
     hasPlatforms = platforms.length > 0;
     return {
       url: location.href,
@@ -192,7 +215,7 @@ export function installHookEngine(adapters: PageAdapter[]): void {
       experiments: Array.from(experiments.values()).map(item => {
         if (item.evidence) return item;
         const key = item.platform + ':' + item.id;
-        const signature = JSON.stringify([location.href, item.status, item.assignedVariationId]);
+        const signature = JSON.stringify([pageKey(), item.status, item.assignedVariationId]);
         const previous = evidenceTimes.get(key);
         const at = previous?.signature === signature ? previous.at : Date.now();
         evidenceTimes.set(key, { signature, at });
@@ -398,7 +421,7 @@ function ownCommand(command: unknown): boolean {
 function inferCategory(name: string): CapturedEvent['category'] {
   if (/revenue|purchase/i.test(name)) return 'revenue';
   if (/conversion|goal/i.test(name)) return 'goal';
-  if (/identify|login|logout|user/i.test(name)) return 'identity';
+  if (/identify|login|logout|set.?user|user.?id/i.test(name)) return 'identity';
   if (/consent/i.test(name)) return 'consent';
   if (/activate|decision|variation|bucket/i.test(name)) return 'activation';
   return 'custom';
@@ -406,10 +429,12 @@ function inferCategory(name: string): CapturedEvent['category'] {
 
 function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>, analytics: () => boolean): void {
   const classify = (raw: string) => { try { const url = new URL(raw, location.href); return identifyEndpoint(url.href) || (analytics() ? analyticsEndpoint(url.href) : undefined); } catch { return undefined; } };
+  // Adobe Target and Analytics fetch/XHR requests are recorded by the Target inspector with full detail; one row per request.
+  const ownedByTarget = (raw: string) => { try { return Boolean(classifyTarget(new URL(raw, location.href).href)); } catch { return false; } };
   const originalFetch = window.fetch;
   const fetchWrapper: typeof window.fetch = function (this: Window, input: RequestInfo | URL, init?: RequestInit) {
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
-    const platform = classify(url);
+    const platform = ownedByTarget(url) ? undefined : classify(url);
     if (platform) emit({ platform, category: 'network', name: `${init?.method || (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')} ${safeUrl(url)}`, properties: { query: analytics() && analyticsEndpoint(url) ? queryValues(url) : undefined, body: safeBody(init?.body), mode: init?.mode }, via: 'network', caller: captureCaller() });
     return Reflect.apply(originalFetch, this, [input, init]);
   };
@@ -425,7 +450,7 @@ function installNetworkHooks(emit: HookHelpers['emit'], cleanups: Array<() => vo
   } as typeof xhrOpen;
   const sendWrapper: typeof xhrSend = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
     const request = (this as any)[urlKey];
-    const platform = request ? classify(request.url) : undefined;
+    const platform = request && !ownedByTarget(request.url) ? classify(request.url) : undefined;
     if (platform) emit({ platform, category: 'network', name: `${request.method} ${safeUrl(request.url)}`, properties: { query: analytics() && analyticsEndpoint(request.url) ? queryValues(request.url) : undefined, body: safeBody(body) }, via: 'network', caller: captureCaller() });
     return Reflect.apply(xhrSend, this, [body]);
   } as typeof xhrSend;
@@ -458,11 +483,11 @@ function safeBody(body: unknown): unknown {
 }
 
 function installHistoryHooks(emit: HookHelpers['emit'], cleanups: Array<() => void>, publish: () => void): void {
-  let lastHref = location.href;
+  let lastHref = pageKey();
   const onRoute = () => {
     // Frameworks often call replaceState with the same URL; that is not a navigation.
-    if (location.href === lastHref) { publish(); return; }
-    lastHref = location.href;
+    if (pageKey() === lastHref) { publish(); return; }
+    lastHref = pageKey();
     emit({ platform: 'page', category: 'pageview', name: `Route ${location.pathname}`, properties: { url: location.href }, via: 'listener' });
     publish();
   };

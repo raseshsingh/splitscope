@@ -16,7 +16,7 @@ export const posthogAdapter: PageAdapter = {
     const seen = new WeakSet<object>();
     const attach = () => {
       const ph = instance(); if (!ph || seen.has(ph)) return; seen.add(ph);
-      helpers.wrapMethod(ph, 'capture', 'posthog', args => String(args[0]), 'custom');
+      helpers.wrapMethod(ph, 'capture', 'posthog', args => String(args[0]), args => { const name = String(args[0] ?? ''); return name === '$pageview' ? 'pageview' : name === '$feature_flag_called' ? 'decision' : name.startsWith('$') ? 'lifecycle' : 'custom'; });
       // getFlagVariants reads cached values without emitting $feature_flag_called.
       for (const method of ['getFeatureFlag', 'isFeatureEnabled']) helpers.wrapMethod(ph, method, 'posthog', args => `${method}: ${args[0]}`, 'decision', (args, result) => {
         if (typeof args[0] === 'string' && result !== undefined) {

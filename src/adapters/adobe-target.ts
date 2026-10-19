@@ -7,6 +7,7 @@ import type { NormalizedExperiment } from '../core/model';
 import type { PageAdapter } from '../core/hooks/runtime';
 import { detection, normalizedExperiment, variationChanges } from '../core/hooks/runtime';
 import { sanitize } from '../core/sanitize';
+import { pageKey } from '../core/page-key';
 
 type Evidence = 'cached' | 'delivered' | 'rendered' | 'failed';
 
@@ -51,6 +52,15 @@ export function readTargetActivities(payload: unknown, evidence: Evidence = 'cac
   visit(payload); return [...found.values()];
 }
 
+/** at.js calls by purpose: fetching decisions, rendering them, view changes and conversions. */
+export function targetCategory(method: string) {
+  if (method === 'getOffer' || method === 'getOffers') return 'decision' as const;
+  if (method === 'applyOffer' || method === 'applyOffers') return 'activation' as const;
+  if (method === 'triggerView') return 'pageview' as const;
+  if (method === 'trackEvent') return 'goal' as const;
+  return 'lifecycle' as const;
+}
+
 export const adobeTargetAdapter: PageAdapter = {
   id: 'adobe-target', displayName: 'Adobe Target', category: 'experimentation',
   detect() {
@@ -66,11 +76,11 @@ export const adobeTargetAdapter: PageAdapter = {
   },
   install(helpers) {
     const win = window as any;
-    let page = location.href;
+    let page = pageKey();
     const pending = new Map<string, NormalizedExperiment[]>();
     const latest = new Map<string, NormalizedExperiment>();
     const publish = (activities: NormalizedExperiment[], evidence: Evidence) => {
-      if (page !== location.href) { page = location.href; pending.clear(); latest.clear(); }
+      if (page !== pageKey()) { page = pageKey(); pending.clear(); latest.clear(); }
       for (const activity of activities) {
         const prior = latest.get(activity.id);
         // A sparse request event must not erase already observed rendering or code.
@@ -107,13 +117,13 @@ export const adobeTargetAdapter: PageAdapter = {
       win.__alloyMonitors.push(monitor);
       helpers.addCleanup(() => { const i = win.__alloyMonitors.indexOf(monitor); if (i >= 0) win.__alloyMonitors.splice(i, 1); });
     }
-    for (const method of ['getOffer', 'getOffers', 'applyOffer', 'applyOffers', 'trackEvent', 'triggerView', 'sendNotifications']) helpers.wrapMethod(() => win.adobe?.target, method, 'adobe-target', () => `adobe.target.${method}`, undefined, (args, result) => {
+    for (const method of ['getOffer', 'getOffers', 'applyOffer', 'applyOffers', 'trackEvent', 'triggerView', 'sendNotifications']) helpers.wrapMethod(() => win.adobe?.target, method, 'adobe-target', () => `adobe.target.${method}`, targetCategory(method), (args, result) => {
       if (method === 'getOffers') publish(readTargetActivities(result, 'delivered'), 'delivered');
       if (method === 'applyOffers' || method === 'applyOffer') publish(readTargetActivities(args, 'delivered'), 'delivered');
     });
     for (const name of ['at-library-loaded', 'at-request-start', 'at-request-succeeded', 'at-request-failed', 'at-content-rendering-succeeded', 'at-content-rendering-failed', 'at-content-rendering-no-offers', 'at-content-rendering-redirect']) {
       helpers.listen(name, event => {
-        if (page !== location.href) { page = location.href; pending.clear(); latest.clear(); }
+        if (page !== pageKey()) { page = pageKey(); pending.clear(); latest.clear(); }
         const detail = (event as CustomEvent).detail;
         if(name==='at-content-rendering-succeeded'){
           const at=Date.now(),page=location.href;

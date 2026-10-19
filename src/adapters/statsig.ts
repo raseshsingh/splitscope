@@ -21,7 +21,8 @@ export const statsigAdapter: PageAdapter = {
         const kind = method === 'getExperiment' ? 'ab' : method === 'getFeatureGate' ? 'feature-flag' : method === 'getLayer' ? 'layer' : 'configuration';
         const variant = value.groupName ?? (method === 'getFeatureGate' && typeof value.value === 'boolean' ? String(value.value) : undefined);
         const fallback = /uninitialized|unrecognized|error/i.test(String(value.details?.reason || ''));
-        helpers.addExperiment(normalizedExperiment({ platform: 'statsig', id: `${instance}:${method}:${value.name}`, name: value.name, kind, status: fallback ? 'unknown' : 'running-in', statusReason: fallback ? 'SDK returned a fallback or unrecognized evaluation.' : 'Observed the site reading this SDK value. Layers and configurations are not classified as experiments.', assignedVariationId: variant == null ? undefined : String(variant), variations: variant == null ? [] : [{ id: String(variant), name: String(variant), raw: value.value }], evaluatedValue: value.value, raw: { client: instance, sdkType: method, evaluation: value } }));
+        const unallocated = method === 'getExperiment' && value.groupName == null;
+        helpers.addExperiment(normalizedExperiment({ platform: 'statsig', id: `${instance}:${method}:${value.name}`, name: value.name, kind, status: fallback ? 'unknown' : unallocated ? 'not-targeted' : 'running-in', statusReason: fallback ? 'SDK returned a fallback or unrecognized evaluation.' : unallocated ? `Statsig evaluated this experiment but did not allocate this user to a group${value.ruleID ? ' (rule ' + String(value.ruleID) + ')' : ''}.` : 'Observed the site reading this SDK value. Layers and configurations are not classified as experiments.', assignedVariationId: variant == null ? undefined : String(variant), variations: variant == null ? [] : [{ id: String(variant), name: String(variant), raw: value.value }], evaluatedValue: value.value, raw: { client: instance, sdkType: method, evaluation: value } }));
       }
       // Read the return values of the site's calls; do not evaluate flags ourselves.
       for (const method of ['getExperiment', 'getFeatureGate', 'getDynamicConfig', 'getLayer']) helpers.wrapMethod(client, method, 'statsig', args => `${method}: ${args[0]}`, 'decision', (_args, value) => observe(method, value));
@@ -31,7 +32,7 @@ export const statsigAdapter: PageAdapter = {
         else if (['gate_evaluation', 'experiment_evaluation', 'dynamic_config_evaluation', 'layer_evaluation'].includes(event?.name)) {
           const mapping: Record<string, [string, string]> = { gate_evaluation: ['getFeatureGate', 'gate'], experiment_evaluation: ['getExperiment', 'experiment'], dynamic_config_evaluation: ['getDynamicConfig', 'dynamicConfig'], layer_evaluation: ['getLayer', 'layer'] };
           const [method, field] = mapping[event.name]!; observe(method, event[field]);
-          helpers.emit({ platform: 'statsig', category: 'decision', name: event.name, experimentId: `${instance}:${method}:${event[field]?.name}`, properties: event[field], via: 'listener' });
+          helpers.emit({ platform: 'statsig', category: 'decision', name: `${method}: ${String(event[field]?.name ?? '')}`, experimentId: `${instance}:${method}:${event[field]?.name}`, properties: event[field], via: 'listener' });
         }
       };
       client.on('*', listener); helpers.addCleanup(() => client.off?.('*', listener));

@@ -14,16 +14,20 @@ export const dynamicYieldAdapter: PageAdapter = {
   listExperiments() {
     const win = window as any;
     const dyo = win.DYO;
-    let rawList: any[] = [];
-    try { rawList = asArray(dyo?.getRenderedObjectsOnPage?.() || dyo?.getUserObjectsAndVariations?.()); } catch {}
-    return mapSafely(rawList, (raw, index) => {
-      const experimentId = raw?.campaignId ?? raw?.id ?? raw?.experienceId ?? index;
+    // Rendered objects are what applied on this page; the user allocation list is site wide.
+    let rawList: any[] = []; let source: 'rendered' | 'allocation' = 'rendered';
+    try { rawList = asArray(dyo?.getRenderedObjectsOnPage?.()); } catch {}
+    if (!rawList.length) { try { rawList = asArray(dyo?.getUserObjectsAndVariations?.()); source = 'allocation'; } catch {} }
+    return mapSafely(rawList, (raw) => {
+      const experimentId = raw?.campaignId ?? raw?.id ?? raw?.experienceId;
+      if (experimentId == null || experimentId === '') return undefined;
       const variant = raw?.variation || raw?.variationObject || raw;
-      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: typeof dyo?.getRenderedObjectsOnPage === 'function' ? 'running-in' : 'unknown', variations: variationList(raw?.variations || [variant]), assignedVariationId: (variant?.variationId ?? variant?.id) == null ? undefined : String(variant?.variationId ?? variant?.id), source: ['runtime-api'], raw: raw });
+      return normalizedExperiment({ platform: 'dynamic-yield', id: String(experimentId), name: raw?.campaignName || raw?.name || `Experience ${experimentId}`, kind: activityKind('dynamic-yield', raw), status: source === 'rendered' ? 'running-in' : 'bucketed-elsewhere', statusReason: source === 'rendered' ? undefined : 'Allocated to this visitor across the site; not reported as rendered on this page.', variations: variationList(raw?.variations || [variant]), assignedVariationId: (variant?.variationId ?? variant?.id) == null ? undefined : String(variant?.variationId ?? variant?.id), source: ['runtime-api'], raw: raw });
     });
   },
   install(helpers) {
-    helpers.wrapQueue('DY', 'dynamic-yield', (args) => String((args[0] as any)?.name || (args[0] as any)?.event || 'DY queue call'));
-    helpers.wrapMethod(() => (window as any).DY, 'API', 'dynamic-yield', (args) => String((args[0] as any)?.name || (args[1] as any)?.name || args[0] || 'DY.API'));
+    helpers.wrapQueue('DY', 'dynamic-yield', (args) => String((args[0] as any)?.name || (args[0] as any)?.event || 'DY queue call'), 'lifecycle');
+    // DY.API('event', { name }) reports a custom event; DY.API('context', ...) describes the page.
+    helpers.wrapMethod(() => (window as any).DY, 'API', 'dynamic-yield', (args) => String((args[1] as any)?.name || (args[0] as any)?.name || args[0] || 'DY.API'), (args) => args[0] === 'event' ? 'custom' : args[0] === 'context' ? 'pageview' : 'lifecycle');
   }
 };

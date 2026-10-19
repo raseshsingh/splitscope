@@ -35,7 +35,9 @@ export const growthbookAdapter: PageAdapter = {
   },
   install(helpers) {
     const seen = new WeakSet<object>();
-    const observe = (exp: any, result: any) => { if (!exp?.key) return; helpers.addExperiment(experiment(exp, result, true)); helpers.emit({ platform: 'growthbook', category: 'decision', name: 'Experiment evaluation', experimentId: String(exp.key), variationId: result?.inExperiment ? String(exp.meta?.[result.variationId]?.key ?? result.variationId) : undefined, properties: { experiment: exp, result }, via: 'listener' }); };
+    // subscribe() and the wrapped run() both report the same evaluation; emit it once, named like the call so the call row absorbs it.
+    const recent = new Map<string, number>();
+    const observe = (exp: any, result: any) => { if (!exp?.key) return; helpers.addExperiment(experiment(exp, result, true)); const key = `${exp.key}:${result?.inExperiment}:${result?.variationId}`, now = Date.now(); if (now - (recent.get(key) || 0) < 1000) return; recent.set(key, now); if (recent.size > 200) recent.clear(); helpers.emit({ platform: 'growthbook', category: 'decision', name: `Experiment evaluation: ${String(exp.key)}`, experimentId: String(exp.key), variationId: result?.inExperiment ? String(exp.meta?.[result.variationId]?.key ?? result.variationId) : undefined, properties: { experiment: exp, result }, via: 'listener' }); };
     const attach = () => {
       const gb = instance(); if (!gb || seen.has(gb)) return; seen.add(gb);
       if (typeof gb.subscribe === 'function') { const remove = gb.subscribe(observe); if (typeof remove === 'function') helpers.addCleanup(remove); }
@@ -43,7 +45,7 @@ export const growthbookAdapter: PageAdapter = {
         if (value?.experiment) observe(value.experiment, value.experimentResult);
         helpers.addExperiment(normalizedExperiment({ platform: 'growthbook', id: `flag:${args[0]}`, name: String(args[0]), kind: 'feature-flag', status: 'running-in', statusReason: 'Observed the site evaluating this feature. A flag is not necessarily an experiment.', evaluatedValue: value?.value, variations: [], raw: value }));
       });
-      helpers.wrapMethod(gb, 'run', 'growthbook', () => 'run experiment', 'decision', (args, result) => observe(args[0], result));
+      helpers.wrapMethod(gb, 'run', 'growthbook', args => `Experiment evaluation: ${String((args[0] as any)?.key ?? '')}`, 'decision', (args, result) => observe(args[0], result));
       helpers.wrapMethod(gb, 'logEvent', 'growthbook', args => String(args[0]), 'custom');
     };
     const safeAttach = () => { try { attach(); } catch {} }; safeAttach(); const timer = setInterval(safeAttach, 500); helpers.addCleanup(() => clearInterval(timer));

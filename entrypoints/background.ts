@@ -122,8 +122,12 @@ export default defineBackground(() => {
     }).catch(() => {});
     return undefined;
   }, { urls: ['<all_urls>'], types: ['image'] }); } catch (error) { diagnostic('background', 'Network capture unavailable; inspector remains available', error); }
+  // Adobe Analytics beacons are recorded only when "Capture analytics calls" is on.
+  let captureAnalytics = false;
+  void browser.storage.local.get('splitscope:settings').then(value => { captureAnalytics = normalizeSettings(value['splitscope:settings']).analyticsCapture === true; }).catch(() => {});
+  browser.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes['splitscope:settings']) captureAnalytics = normalizeSettings(changes['splitscope:settings'].newValue).analyticsCapture === true; });
   try { browser.webRequest.onCompleted.addListener(details => {
-    if (details.tabId < 0 || details.frameId !== 0 || !['image','ping'].includes(details.type) || classifyTarget(details.url) !== 'analytics') return;
+    if (!captureAnalytics || details.tabId < 0 || details.frameId !== 0 || !['image','ping'].includes(details.type) || classifyTarget(details.url) !== 'analytics') return;
     void browser.tabs.get(details.tabId).then(async tab => {
       if (!tab.url) return;
       const wire = normalizeWire({url:details.url,page:tab.url,at:details.timeStamp,duration:0,status:details.statusCode});
