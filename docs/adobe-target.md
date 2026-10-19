@@ -1,6 +1,6 @@
 # Adobe Target module — updated in 0.2.1
 
-The supplied six-phase specification is implemented incrementally, with a commit per phase. Adobe Target controls live in the collapsible Adobe Target tools section inside Activities; other platform workflows are unchanged.
+The supplied six-phase specification is implemented incrementally, with a commit per phase. Since 0.8.0 the Adobe Target controls live under Tools, grouped into Overview, QA, Delivery and Tracking; the Adobe Target tools link in Activities opens them.
 
 ## Phase 1 — wire capture
 

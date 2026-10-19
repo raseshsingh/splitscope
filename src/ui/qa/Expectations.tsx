@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { CheckRun } from '../../core/qa/check-run';
 import { finishCheck, startCheck } from '../../core/qa/check-run';
 import type { EventExpectation } from '../../core/qa/expectations';
@@ -6,15 +6,23 @@ import { platformNames, pretty } from '../../core/qa/presentation';
 import { sanitize } from '../../core/sanitize';
 import { CopyButton, Icon, JsonTree } from '../shared/components';
 
-type Props = { rules: EventExpectation[]; onChange: (rules: EventExpectation[]) => void; paused: boolean; run: CheckRun | null; onRun: (run: CheckRun | null) => void };
-export default function Expectations({ rules, onChange, paused, run, onRun }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export type CheckDraft = { rule: Pick<EventExpectation, 'eventName' | 'platform' | 'required' | 'equals'>; request: number };
+type Props = { rules: EventExpectation[]; onChange: (rules: EventExpectation[]) => void; paused: boolean; run: CheckRun | null; onRun: (run: CheckRun | null) => void; draft?: CheckDraft | null };
+export default function Expectations({ rules, onChange, paused, run, onRun, draft }: Props) {
+  const [expanded, setExpanded] = useState(!!draft);
+  const root = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState(''), [platform, setPlatform] = useState('all');
   const [required, setRequired] = useState(''), [equals, setEquals] = useState('{}'), [error, setError] = useState('');
   const [minCount, setMinCount] = useState(''), [maxCount, setMaxCount] = useState('');
   const running = !!run && !run.endedAt;
   const summary = run ? running ? 'Check running' : `${run.results.filter(result => result.status === 'passed').length}/${run.results.length} matched` : `${rules.length} saved`;
+  // "Create check from this event" opens the form prefilled; the user reviews and saves it.
+  useEffect(() => {
+    if (!draft || running) return;
+    setExpanded(true); edit({ ...draft.rule, id: '', name: draft.rule.eventName });
+    queueMicrotask(() => root.current?.scrollIntoView?.({ block: 'start' }));
+  }, [draft?.request]);
   function edit(rule?: EventExpectation) {
     setEditing(rule?.id || 'new'); setName(rule?.eventName || ''); setPlatform(rule?.platform || 'all');
     setRequired(rule?.required.join(', ') || ''); setEquals(pretty(rule?.equals || {})); setError('');
@@ -36,7 +44,7 @@ export default function Expectations({ rules, onChange, paused, run, onRun }: Pr
       setEditing(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
-  return <section class="ss-checks">
+  return <section class="ss-checks" ref={root}>
     <button class="ss-disclosure-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><span><strong>Event checks</strong><small>{summary} · {expanded ? 'Hide' : 'Set up or review'}</small></span><span class={'ss-badge ' + (running ? 'ss-recording' : '')}>{running ? 'Recording' : 'QA'}</span></button>
     {expanded && <div class="ss-disclosure-body"><p class="ss-caption ss-muted">Start a check, perform your action, then finish. Expectations are saved for this site.</p>
       {running && <p class="ss-note ss-note-info" role="status"><Icon name="play" size={12} /> Check running. Perform the action on the website, then finish.{paused && <b> Recording is paused, so the result will be incomplete.</b>}</p>}

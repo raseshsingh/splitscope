@@ -5,16 +5,31 @@ import { useState, useEffect } from 'preact/hooks';
 import type { PageState } from '../../core/state';
 import { CopyButton, Disclosure, Empty, JsonTree } from '../shared/components';
 import type { TargetData } from './target-data';
-export const targetTabs = ['Findings', 'Timeline', 'Raw', 'Identity', 'A4T', 'Tracking', 'Timing', 'QA', 'Mboxes', 'On-device', 'Memory', 'Conflicts'];
+export type TargetGroup = 'Overview' | 'QA' | 'Delivery' | 'Tracking';
+/** Twelve views grouped by the question they answer, so the tool never shows a wall of chips. */
+export const targetGroups: Record<TargetGroup, string[]> = {
+  Overview: ['Findings', 'Timeline', 'Conflicts'],
+  QA: ['QA', 'Memory'],
+  Delivery: ['Mboxes', 'On-device', 'Timing', 'Raw'],
+  Tracking: ['A4T', 'Tracking', 'Identity'],
+};
+export const targetTabs = Object.values(targetGroups).flat();
+const firstView = (group: TargetGroup) => targetGroups[group][0] || 'Findings';
+const groupOf = (view: string) => (Object.keys(targetGroups) as TargetGroup[]).find(group => targetGroups[group].includes(view)) || 'Overview';
+// Remember the last view across remounts (switching panel tabs unmounts the tool).
+let lastView = 'Findings';
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour12: false });
 function Bars({ rows }: { rows: Array<{ label: string; ms: number; tone: string }> }) {
   const max = Math.max(1, ...rows.map(row => row.ms));
   return <div class="ss-bars">{rows.map(row => <div key={row.label}><div class="ss-caption ss-muted">{row.label} · {Math.round(row.ms)} ms</div><div class="ss-tm"><i class={'ss-tm-' + row.tone} style={{ width: Math.max(2, row.ms / max * 100) + '%' }} /></div></div>)}</div>;
 }
-export default function TargetView({ state, onAction, data }: { state: PageState; onAction?: (payload: Record<string, unknown>) => Promise<any>; data: TargetData }) {
+export default function TargetView({ state, onAction, data, initialGroup, groupRequest = 0 }: { state: PageState; onAction?: (payload: Record<string, unknown>) => Promise<any>; data: TargetData; initialGroup?: TargetGroup; groupRequest?: number }) {
   const [, tick] = useState(0);
   useEffect(() => { const timer = setInterval(() => tick(n => n + 1), 5000); return () => clearInterval(timer); }, []);
-  const [tab, setTab] = useState('Findings');
+  const [tab, setView] = useState(() => initialGroup ? firstView(initialGroup) : lastView);
+  const setTab = (view: string) => { lastView = view; setView(view); };
+  useEffect(() => { if (groupRequest && initialGroup) setTab(firstView(initialGroup)); }, [groupRequest]);
+  const group = groupOf(tab);
   const { records, config, findings } = data;
   const targetRecords = records.filter(r => r.target);
   const timingEvents = state.events.filter(e => (e.properties as any)?.schema === 'target-timing-v1' || e.platform === 'adobe-target' && e.via === 'api-call');
@@ -29,7 +44,8 @@ export default function TargetView({ state, onAction, data }: { state: PageState
   for (const r of records) for (const item of r.integrity?.served || []) { const prior = tracked.get(item.ref); tracked.set(item.ref, { kind: item.kind, seen: (prior?.seen || 0) + 1 }); }
   return <section class="ss-target">
     <p class="ss-caption ss-muted">Observed delivery and decisions. Captures begin when the extension connects; unavailable response fields cannot be inferred. This view uses the latest 150 retained wire captures.</p>
-    <div class="ss-chips" role="group" aria-label="Adobe Target tool">{targetTabs.map(name => <button key={name} class={tab === name ? 'ss-selected' : ''} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
+    <div class="ss-tabs ss-target-groups" role="group" aria-label="Adobe Target area">{(Object.keys(targetGroups) as TargetGroup[]).map(name => <button key={name} class={group === name ? 'ss-selected' : ''} aria-pressed={group === name} onClick={() => setTab(firstView(name))}>{name}{name === 'Overview' && findings.length > 0 && <span class="ss-count">{findings.length}</span>}</button>)}</div>
+    <div class="ss-chips" role="group" aria-label="Adobe Target tool">{targetGroups[group].map(name => <button key={name} class={tab === name ? 'ss-selected' : ''} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}</div>
     <div class="ss-tags">{[...new Set(targetRecords.map(r => r.client).filter(Boolean))].map(client => <span class="ss-tag" key={client as string}>{client}</span>)}{[...new Set(targetRecords.map(r => r.pipe))].map(pipe => <span class="ss-tag" key={pipe}>{pipe}</span>)}{records.some(r => r.integrity?.qaActive) && <span class="ss-tag ss-tag-warn">QA observed</span>}</div>
     {['Mboxes', 'On-device', 'Memory', 'Conflicts'].includes(tab) && <TargetInventory tab={tab} state={state} records={records} onAction={onAction} />}
     {tab === 'Timing' && <>

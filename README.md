@@ -13,7 +13,7 @@ It helps marketers, developers, analysts, and QA teams answer practical question
 - Did an assignment change after navigation, a reload, or a preview?
 - What evidence can I share with the person investigating an issue?
 
-**Current version:** 0.7.0 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
+**Current version:** 0.8.0 · **14 platform integrations** · **Chrome 116+** · **No Splitscope account required**
 
 > Coverage depends on what a website exposes. Splitscope inspects browser-visible data; it does not connect to vendor accounts or retrieve every experiment configured in a project. A reported decision does not, by itself, prove that all visual changes rendered.
 
@@ -48,7 +48,7 @@ npm run build
 
 ### A first QA session
 
-1. Open **Activities** and select **Here** to focus on current page decisions.
+1. Open **Activities** and select **Active** to focus on activities active on this page.
 2. Open an activity to inspect its assignment, exposed variations, and code.
 3. Open **Events**, interact with the website, and expand an event to inspect its payload. Choose **All event types** to include technical calls and navigation.
 4. Use **Tools** to save a comparison baseline, record a journey, or export a QA report.
@@ -85,7 +85,7 @@ Each integration includes observation of supported calls or events. This does no
 
 - Search by activity name, activity ID, or variation ID.
 - Filter by platform and reported activity type.
-- Switch between **All**, **Here**, **Other**, and **Pinned**.
+- Switch between **All**, **Active**, **Other**, and **Pinned**.
 - See current page decisions separately from configuration and stored decisions.
 - Distinguish A/B tests, personalization, split-URL tests, feature flags, configurations, and other types when the runtime exposes enough information. Unknown types remain unknown.
 - Pin activities and retain your selection and filters in a per-site workspace.
@@ -183,7 +183,7 @@ Journey recording is separate from event-log retention. It retains up to 500 ent
 
 ## Adobe Target tools
 
-Adobe Target has additional tools in a **collapsible section inside Activities**. There is no separate top-level Target tab.
+Adobe Target has its own tool under **Tools** (shown when Target is detected). The **Adobe Target tools** link in Activities opens it. Views are grouped into **Overview** (Findings, Timeline, Conflicts), **QA** (QA, Memory), **Delivery** (Mboxes, On-device, Timing, Raw) and **Tracking** (A4T, Tracking, Identity).
 
 | Section | Features |
 | --- | --- |

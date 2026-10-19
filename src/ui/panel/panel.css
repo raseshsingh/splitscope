@@ -219,3 +219,16 @@
 .ss-app .ss-h{margin:20px 0 6px;display:flex;align-items:center;gap:6px}.ss-app .ss-h:first-child{margin-top:4px}
 .ss-setting+p.ss-caption{margin-top:8px}
 .ss-assoc{margin-top:14px}.ss-assoc-row{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}.ss-assoc-row>.ss-tag{align-self:flex-start}
+.ss-detail-actions{margin:10px 0 2px;justify-content:space-between}
+.ss-variation .ss-button.ss-small{margin-left:4px}
+.ss-goals li{align-items:center}
+.ss-target-link{display:flex;align-items:center;gap:10px;width:100%;margin:14px 0;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);text-align:left}
+.ss-target-link:hover{border-color:var(--brand)}
+.ss-target-link>span:first-child{flex:1;min-width:0}
+.ss-target-link strong{display:block;font-size:.95em}
+.ss-target-link small{display:block;color:var(--muted);font-size:.8em;margin-top:3px}
+.ss-target-groups{margin:4px 0 12px;padding:0}
+.ss-target-groups .ss-count{margin-left:5px;font-size:10.5px;color:var(--amber)}
+.ss-feed-controls .ss-labelled{flex:none;gap:5px}
+.ss-feed-controls .ss-labelled.ss-on{background:var(--tint);border-color:var(--brand)}
+.ss-event-body>.ss-inline .ss-actions{display:flex;gap:6px;align-items:center}

@@ -4,6 +4,15 @@ export interface CheckResult { id: string; name: string; status: 'waiting' | 'no
 export function field(value: unknown, path: string): unknown {
   return path.split('.').reduce((item: any, key) => item && typeof item === 'object' && Object.hasOwn(item, key) ? item[key] : undefined, value);
 }
+/** Start an expectation from a captured event: same name and source, top-level properties required, no values pinned. */
+export function draftFromEvent(event: Pick<CapturedEvent, 'name' | 'platform' | 'properties'>): Pick<EventExpectation, 'eventName' | 'platform' | 'required' | 'equals'> {
+  const props = event.properties;
+  const unavailable = (value: unknown) => typeof value === 'string' && /\[(redacted|payload truncated|depth limit|getter|unavailable)\]/.test(value);
+  const required = props && typeof props === 'object' && !Array.isArray(props)
+    ? Object.entries(props as Record<string, unknown>).filter(([key, value]) => key.length <= 200 && value !== undefined && !unavailable(value)).map(([key]) => key).slice(0, 10)
+    : [];
+  return { eventName: String(event.name).slice(0, 300), platform: event.platform === 'page' ? 'all' : event.platform, required, equals: {} };
+}
 export function evaluateExpectations(rules: EventExpectation[], events: CapturedEvent[], start: number, end?: number): CheckResult[] {
   return rules.map(rule => {
     const matches = events.filter(event => event.t >= start && (end == null || event.t <= end) && event.via !== 'queued-before-load' && (rule.platform === 'all' || event.platform === rule.platform) && event.name === rule.eventName);

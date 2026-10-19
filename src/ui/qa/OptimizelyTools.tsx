@@ -16,16 +16,24 @@ function Tree({ node }: { node: ConditionNode }) {
   return <div class="ss-aud-node"><div class="ss-aud-row"><span class={m.cls}>{m.text}</span><span class="ss-wrap">{node.label}</span></div>{node.note && <small class="ss-muted ss-wrap">{node.note}</small>}{node.children && node.children.length > 0 && <div class="ss-aud-children">{node.children.map((child, index) => <Tree key={index} node={child} />)}</div>}</div>;
 }
 
+/** Survives remounts (switching panel tabs unmounts tools). Results are kept only for the page they came from. */
+const remembered: { page: string; section: Section; experimentId: string; audit: any } = { page: '', section: 'visitor', experimentId: '', audit: null };
+const recall = () => { const page = globalThis.location ? location.origin + location.pathname : ''; if (remembered.page !== page) Object.assign(remembered, { page, experimentId: '', audit: null }); return remembered; };
+
 /** Visitor, audience, page and event tools for Optimizely Web, run through the page hook. */
 export default function OptimizelyTools({ state, onAction, workspace, onRevision, onNotice }: { state: PageState; onAction?: PlatformAction; workspace: Workspace; onRevision: (key: string, revision: string) => void; onNotice: (message: string) => void }) {
-  const [section, setSection] = useState<Section>('visitor');
+  const memory = recall();
+  const [section, setSectionState] = useState<Section>(memory.section);
+  const setSection = (value: Section) => { memory.section = value; setSectionState(value); };
   const [info, setInfo] = useState<any>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [attrId, setAttrId] = useState(''); const [attrValue, setAttrValue] = useState(''); const [attrType, setAttrType] = useState('string');
   const experiments = state.experiments.filter(item => item.platform === 'optimizely');
-  const [experimentId, setExperimentId] = useState('');
-  const [audit, setAudit] = useState<any>(null);
+  const [experimentId, setExperimentIdState] = useState(memory.experimentId);
+  const setExperimentId = (value: string) => { memory.experimentId = value; setExperimentIdState(value); };
+  const [audit, setAuditState] = useState<any>(memory.audit);
+  const setAudit = (value: any) => { memory.audit = value; setAuditState(value); };
   const [fire, setFire] = useState<null | { eventName: string; label: string }>(null);
   const [previousRevision, setPreviousRevision] = useState<{ revision: string; at: number } | null>(null);
 

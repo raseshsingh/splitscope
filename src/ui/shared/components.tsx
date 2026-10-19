@@ -34,7 +34,7 @@ export function JsonTree({ value, label = 'Payload', depth = 0, defaultOpen = fa
   const items = Object.entries(value);
   return <div class="ss-json-node"><button class="ss-tree-toggle" aria-expanded={open} onClick={() => setOpen(!open)}><span class={open ? 'ss-chevron ss-open' : 'ss-chevron'}><Icon name="arrow" size={12} /></span><b>{label}</b><span class="ss-muted">{Array.isArray(value) ? '[' + items.length + ' items]' : '{' + items.length + ' fields}'}</span></button>{open && <div class="ss-tree-children">{depth >= 12 ? <pre class="ss-code">{pretty(value)}</pre> : items.slice(0, limit).map(([key, child]) => <JsonTree key={key} label={key} value={child} depth={depth + 1} />)}{items.length > limit && <button class="ss-link" onClick={() => setLimit(limit + 40)}>Show 40 more fields</button>}</div>}</div>;
 }
-export function Disclosure({ title, meta, children }: { title: string; meta?: string; children: ComponentChildren }) {
-  const [open, setOpen] = useState(false);
+export function Disclosure({ title, meta, children, defaultOpen = false }: { title: string; meta?: string; children: ComponentChildren; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return <section class="ss-disclosure"><button class="ss-disclosure-toggle" aria-expanded={open} onClick={() => setOpen(!open)}><span><strong>{title}</strong>{meta && <small>{meta}</small>}</span><span class={open ? 'ss-chevron ss-open' : 'ss-chevron'}><Icon name="arrow" size={15} /></span></button>{open && <div class="ss-disclosure-body">{children}</div>}</section>;
 }

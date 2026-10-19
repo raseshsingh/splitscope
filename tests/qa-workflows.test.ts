@@ -103,3 +103,14 @@ test('Workspace export files can be imported again and bad files are rejected', 
   assert.equal(parseWorkspaceImport('not json'), null);
   assert.equal(parseWorkspaceImport('{"foo":1}'), null);
 });
+
+test('a check drafted from an event keeps its name, source and available top-level fields', async () => {
+  const { draftFromEvent } = await import('../src/core/qa/expectations');
+  const { isBusinessEvent } = await import('../src/core/qa/presentation');
+  const draft = draftFromEvent({ name: 'add_to_cart', platform: 'kameleoon', properties: { sku: 'A1', price: 9, email: '[redacted]', nested: { a: 1 } } });
+  assert.deepEqual(draft, { eventName: 'add_to_cart', platform: 'kameleoon', required: ['sku', 'price', 'nested'], equals: {} });
+  assert.deepEqual(draftFromEvent({ name: 'route', platform: 'page', properties: ['x'] }).required, []);
+  assert.equal(draftFromEvent({ name: 'route', platform: 'page', properties: undefined }).platform, 'all');
+  assert.equal(isBusinessEvent({ category: 'goal' }), true);
+  assert.equal(isBusinessEvent({ category: 'network' }), false);
+});

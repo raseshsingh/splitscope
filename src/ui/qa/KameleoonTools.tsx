@@ -9,11 +9,18 @@ type Pending = { title: string; body: string; confirm: string; run: () => void }
 const consent = (value: unknown) => value === true ? { text: 'Granted', cls: 'ss-tag ss-tag-ok' } : value === false ? { text: 'Not granted', cls: 'ss-tag ss-tag-warn' } : { text: 'Not set', cls: 'ss-tag' };
 const when = (value: unknown) => typeof value === 'number' && value > 0 ? new Date(value).toLocaleString() : undefined;
 
+/** Survives remounts (switching panel tabs unmounts tools). Results are kept only for the page they came from. */
+const remembered: { page: string; section: Section; experiments: any[] | null } = { page: '', section: 'visitor', experiments: null };
+const recall = () => { const page = globalThis.location ? location.origin + location.pathname : ''; if (remembered.page !== page) Object.assign(remembered, { page, experiments: null }); return remembered; };
+
 /** Visitor, custom data, experiment exposure, goal and segment tools for Kameleoon, run through the page hook. */
 export default function KameleoonTools({ onAction, onNotice }: { onAction?: PlatformAction; onNotice: (message: string) => void }) {
-  const [section, setSection] = useState<Section>('visitor');
+  const memory = recall();
+  const [section, setSectionState] = useState<Section>(memory.section);
+  const setSection = (value: Section) => { memory.section = value; setSectionState(value); };
   const [info, setInfo] = useState<any>(null);
-  const [experiments, setExperiments] = useState<any[] | null>(null);
+  const [experiments, setExperimentsState] = useState<any[] | null>(memory.experiments);
+  const setExperiments = (value: any[] | null) => { memory.experiments = value; setExperimentsState(value); };
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [dataName, setDataName] = useState(''); const [dataValue, setDataValue] = useState(''); const [dataType, setDataType] = useState('string'); const [overwrite, setOverwrite] = useState(true);

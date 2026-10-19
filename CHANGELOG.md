@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.0
+
+Phase 2 of the extension review: make the main jobs faster.
+
+Activity detail
+- Each variation has its own Preview button, so previewing is one click from the variation list. While the preview is prepared the button reads Preparing and a note names the variation.
+- Goals show whether they fired on this page: "Fired 2x, last 14:03:11" or "Not seen yet". Matching uses the same platform, business event types, and skips events linked to another activity.
+- Assignment shows the variation name and ID together. Fields the platform does not expose are listed in one line.
+- Changes: the assigned variation comes first, the first change is open, "Expand all" opens the rest, and downloads are named after the platform, activity and change.
+- The detail remembers the last tab per activity. The Events tab count matches what the tab lists.
+
+Preview dialog
+- "Preview in this tab" is the primary action. "Open in new tab" only appears when the platform can be previewed by link. Tracking effects are described per platform.
+
+Adobe Target
+- Target tools moved from the bottom of Activities to Tools, with four groups (Overview, QA, Delivery, Tracking) instead of twelve chips. The Activities link and "Manage blocking" open the right group. The last view is remembered.
+
+Wording and events
+- "Active on this page" is used everywhere: the scope filter is All / Active / Other / Pinned, the minimized pill says "N active", and the QA report counts "Active on this page".
+- The Events badge counts goals and custom events (the default view); the tooltip gives the total.
+- Stop / Start and Freeze / Resume are labelled buttons instead of icons.
+- "Create check" on any event opens Event checks with the name, source and top-level properties filled in.
+- Optimizely and Kameleoon tools keep their section, chosen experiment and results when you switch panel tabs (for the same page).
+
 ## 0.7.0
 
 Phase 1 of the extension review: trust what the panel shows.
